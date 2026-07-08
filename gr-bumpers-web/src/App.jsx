@@ -485,7 +485,7 @@ export default function App() {
         ::-webkit-scrollbar { height: 8px; width: 8px; }
         ::-webkit-scrollbar-thumb { background: #C9C5B8; border-radius: 4px; }
         button { cursor: pointer; font-family: 'Inter', sans-serif; }
-        .app-shell { display: flex; align-items: flex-start; min-height: 100%; max-width: 1320px; margin: 0 auto; }
+        .app-shell { display: flex; align-items: flex-start; min-height: 100%; width: 100%; }
         .sidebar { width: 220px; flex-shrink: 0; background: #1C2126; color: #F5F3EE; min-height: 100vh; padding: 20px 12px; position: sticky; top: 0; }
         .sidebar-nav-group-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #6B7280; padding: 14px 12px 6px; }
         .sidebar-nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 7px; font-size: 13px; font-weight: 600; color: #B7BCC2; cursor: pointer; margin-bottom: 2px; border: none; background: transparent; width: 100%; text-align: left; }
