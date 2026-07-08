@@ -1,19 +1,31 @@
 // Vercel serverless function: GET/POST /api/storage
-// Backed by Upstash Redis. Requires these env vars to be set in your Vercel project:
-//   UPSTASH_REDIS_REST_URL
-//   UPSTASH_REDIS_REST_TOKEN
-// (These are added automatically if you connect an Upstash Redis database to your
-// project from the Vercel dashboard's Storage tab. Otherwise copy them from your
-// Upstash console into Vercel's Environment Variables settings.)
+// Backed by Upstash Redis. Vercel's Upstash Marketplace integration can name the
+// injected credentials one of a couple ways depending on how the database was
+// created, so we check both:
+//   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (Upstash's own naming)
+//   KV_REST_API_URL / KV_REST_API_TOKEN                  (legacy Vercel KV naming,
+//                                                          still used by some
+//                                                          Marketplace flows)
 
 import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv();
+const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+const redis = url && token ? new Redis({ url, token }) : null;
 
 // Namespaced so this Redis database could safely be reused by other projects later.
 const NS = 'gr-bumpers:';
 
 export default async function handler(req, res) {
+  if (!redis) {
+    return res.status(500).json({
+      error: 'Redis credentials not found. Check that UPSTASH_REDIS_REST_URL/TOKEN ' +
+        '(or KV_REST_API_URL/TOKEN) are set in this Vercel project\'s Environment ' +
+        'Variables, then redeploy.',
+    });
+  }
+
   try {
     if (req.method === 'GET') {
       const { key } = req.query;
