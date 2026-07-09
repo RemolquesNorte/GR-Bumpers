@@ -1201,15 +1201,15 @@ function IssuesView({ dataIssues, openOrders }) {
 
 function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
   const [selected, setSelected] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const options = useMemo(() => dealers.map(d => d.name).sort(), [dealers]);
   const dealerInfo = dealers.find(d => normName(d.name) === normName(selected));
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     if (!dealerInfo) return [];
     return openOrders
       .filter(o => normName(o.dealer) === normName(selected))
       .sort((a, b) => (parseDate(a.date)?.getTime() ?? Infinity) - (parseDate(b.date)?.getTime() ?? Infinity));
   }, [openOrders, selected, dealerInfo]);
-  const totalUnits = rows.reduce((s, o) => s + o.backordered, 0);
 
   // Same priority logic as Bumper Lookup / Production Planning: for each model + warehouse,
   // stock gets allocated oldest-order-first across ALL dealers, not just this one — so this
@@ -1224,6 +1224,18 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
     });
     return map;
   }, [ordersByLocSku, inventory]);
+
+  function statusKeyFor(o) {
+    const cov = coverageById[o.id];
+    if (!cov) return 'unknown';
+    if (cov.fullyCovered) return 'ready';
+    if (cov.coveredQty > 0) return 'partial';
+    return 'waiting';
+  }
+
+  // Filtering never disturbs the oldest-to-newest order — it just narrows the same list down.
+  const rows = statusFilter === 'all' ? allRows : allRows.filter(o => statusKeyFor(o) === statusFilter);
+  const totalUnits = rows.reduce((s, o) => s + o.backordered, 0);
 
   return (
     <div>
@@ -1251,13 +1263,24 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
             <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 19, textTransform: 'uppercase' }}>{dealerInfo.name}</span>
             <Badge color={LOCATIONS[dealerInfo.origin].color} bg="transparent" border={LOCATIONS[dealerInfo.origin].color}>Ships from {LOCATIONS[dealerInfo.origin].short}</Badge>
           </div>
-          <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 8 }}>
-            {rows.length} open order line{rows.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'} owed
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 12.5, color: '#5B6470' }}>
+              {rows.length} open order line{rows.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'} owed
+              {statusFilter !== 'all' && allRows.length !== rows.length && <span> (of {allRows.length} total)</span>}
+            </div>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{
+              padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5
+            }}>
+              <option value="all">All statuses</option>
+              <option value="ready">Ready to ship</option>
+              <option value="partial">Partial</option>
+              <option value="waiting">Waiting on stock</option>
+            </select>
           </div>
 
           {rows.length === 0 ? (
             <div style={{ color: '#5B6470', fontSize: 13, background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 14 }}>
-              No open orders for this dealer right now.
+              {allRows.length === 0 ? 'No open orders for this dealer right now.' : 'No orders match this filter.'}
             </div>
           ) : (
             <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden' }}>
@@ -1349,9 +1372,10 @@ function SoldUnitsView({ salesLog }) {
   const [skuFilter, setSkuFilter] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [sortMode, setSortMode] = useState('date');
 
   const rows = useMemo(() => {
-    return salesLog
+    const filtered = salesLog
       .filter(s => !skuFilter || s.sku.toLowerCase().includes(skuFilter.toLowerCase()))
       .filter(s => {
         const d = parseDate(s.date);
@@ -1359,9 +1383,11 @@ function SoldUnitsView({ salesLog }) {
         if (from && d < new Date(from + 'T00:00:00')) return false;
         if (to && d > new Date(to + 'T23:59:59')) return false;
         return true;
-      })
-      .sort((a, b) => (parseDate(b.date)?.getTime() ?? 0) - (parseDate(a.date)?.getTime() ?? 0));
-  }, [salesLog, skuFilter, from, to]);
+      });
+    if (sortMode === 'most') return filtered.sort((a, b) => b.qty - a.qty);
+    if (sortMode === 'least') return filtered.sort((a, b) => a.qty - b.qty);
+    return filtered.sort((a, b) => (parseDate(b.date)?.getTime() ?? 0) - (parseDate(a.date)?.getTime() ?? 0));
+  }, [salesLog, skuFilter, from, to, sortMode]);
 
   const totalSold = rows.reduce((s, r) => s + r.qty, 0);
 
@@ -1388,6 +1414,11 @@ function SoldUnitsView({ salesLog }) {
           To
           <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5 }} />
         </label>
+        <select value={sortMode} onChange={e => setSortMode(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5 }}>
+          <option value="date">Sort: newest first</option>
+          <option value="most">Sort: most sold</option>
+          <option value="least">Sort: least sold</option>
+        </select>
         {(from || to || skuFilter) && (
           <button onClick={() => { setFrom(''); setTo(''); setSkuFilter(''); }} style={{
             fontSize: 12, color: '#B23A2E', background: 'none', border: 'none', fontWeight: 600
