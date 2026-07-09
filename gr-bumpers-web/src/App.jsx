@@ -445,6 +445,74 @@ export default function App() {
     persistDealers(next);
   }
 
+  function renameDealer(oldName, newName) {
+    if (!newName || newName === oldName) return;
+    if (dealers.some(d => normName(d.name) === normName(newName) && d.name !== oldName)) {
+      showToast('A dealer with that name already exists');
+      return;
+    }
+    const nextDealers = dealers
+      .map(d => d.name === oldName ? { ...d, name: newName } : d)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    persistDealers(nextDealers);
+    const nextOrders = orders.map(o => normName(o.dealer) === normName(oldName) ? { ...o, dealer: newName } : o);
+    persistOrders(nextOrders);
+    showToast(`Renamed dealer to ${newName}`);
+  }
+
+  function deleteDealer(name) {
+    persistDealers(dealers.filter(d => d.name !== name));
+    showToast(`Removed dealer ${name}`);
+  }
+
+  function addModel(sku) {
+    const clean = sku.trim().toUpperCase();
+    if (!clean) return;
+    if (inventory.some(r => r.sku === clean)) {
+      showToast('That model already exists');
+      return;
+    }
+    const next = [...inventory, { sku: clean, mx: 0, us: 0 }].sort((a, b) => a.sku.localeCompare(b.sku));
+    persistInventory(next);
+    showToast(`Added model ${clean}`);
+  }
+
+  function renameModel(oldSku, newSku) {
+    const clean = newSku.trim().toUpperCase();
+    if (!clean || clean === oldSku) return;
+    const oldRow = inventory.find(r => r.sku === oldSku);
+    if (!oldRow) return;
+    const existing = inventory.find(r => r.sku === clean);
+    let nextInv;
+    if (existing) {
+      nextInv = inventory
+        .filter(r => r.sku !== oldSku)
+        .map(r => r.sku === clean ? { ...r, mx: (r.mx || 0) + (oldRow.mx || 0), us: (r.us || 0) + (oldRow.us || 0) } : r);
+    } else {
+      nextInv = inventory.map(r => r.sku === oldSku ? { ...r, sku: clean } : r);
+    }
+    persistInventory(nextInv);
+
+    persistOrders(orders.map(o => o.sku === oldSku ? { ...o, sku: clean } : o));
+
+    if (pendingProduction[oldSku]) {
+      const nextPending = { ...pendingProduction };
+      nextPending[clean] = (nextPending[clean] || 0) + nextPending[oldSku];
+      delete nextPending[oldSku];
+      persistPendingProduction(nextPending);
+    }
+
+    persistSales(salesLog.map(s => s.sku === oldSku ? { ...s, sku: clean } : s));
+    persistProductionLog(productionLog.map(p => p.sku === oldSku ? { ...p, sku: clean } : p));
+
+    showToast(`Renamed ${oldSku} to ${clean}`);
+  }
+
+  function deleteModel(sku) {
+    persistInventory(inventory.filter(r => r.sku !== sku));
+    showToast(`Removed model ${sku}`);
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, fontFamily: "'Inter', sans-serif", color: '#5B6470', gap: 10 }}>
@@ -466,6 +534,7 @@ export default function App() {
       { id: 'production', label: 'Production Planning', icon: Factory },
       { id: 'sold', label: 'Sold Units', icon: TrendingDown },
       { id: 'orders', label: 'Orders', icon: ClipboardList },
+      { id: 'models', label: 'Models', icon: Package },
       { id: 'dealers', label: 'Dealers', icon: Users },
     ] },
     { group: 'Data', items: [
@@ -548,8 +617,11 @@ export default function App() {
           {tab === 'orders' && (
             <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} />
           )}
+          {tab === 'models' && (
+            <ModelsView inventory={inventory} orders={orders} pendingProduction={pendingProduction} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
+          )}
           {tab === 'dealers' && (
-            <DealersView dealers={dealers} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} />
+            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} />
           )}
           {tab === 'import' && (
             <ImportView openImport={setImportModal} />
@@ -971,11 +1043,23 @@ function OrdersView({ orders, onAdd, setShipModal }) {
   );
 }
 
-function DealersView({ dealers, onAdd, toggleDealerOrigin }) {
+function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete }) {
   const [q, setQ] = useState('');
   const [editMode, setEditMode] = useState(false);
+  const [editingName, setEditingName] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [confirmDeleteName, setConfirmDeleteName] = useState(null);
   const rows = dealers.filter(d => d.name.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  function openOrderCount(name) {
+    return orders.filter(o => normName(o.dealer) === normName(name) && o.backordered > 0).length;
+  }
+  function saveRename(oldName) {
+    if (renameValue.trim() && renameValue.trim() !== oldName) onRename(oldName, renameValue.trim());
+    setEditingName(null);
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10, flexWrap: 'wrap' }}>
@@ -988,11 +1072,11 @@ function DealersView({ dealers, onAdd, toggleDealerOrigin }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#8A8F97' }}>{rows.length} dealers</div>
-          <button onClick={() => setEditMode(e => !e)} style={{
+          <button onClick={() => { setEditMode(e => !e); setEditingName(null); setConfirmDeleteName(null); }} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: editMode ? '#1C2126' : 'white', color: editMode ? 'white' : '#1C2126',
             border: '1px solid #1C2126', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
-          }}><Edit3 size={13} /> {editMode ? 'Done editing' : 'Edit origins'}</button>
+          }}><Edit3 size={13} /> {editMode ? 'Done editing' : 'Edit dealers'}</button>
           <button onClick={onAdd} style={{
             display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
             border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 13, fontWeight: 700
@@ -1001,25 +1085,53 @@ function DealersView({ dealers, onAdd, toggleDealerOrigin }) {
       </div>
       {editMode && (
         <div style={{ fontSize: 12, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 7, padding: '8px 12px', marginBottom: 7 }}>
-          Editing on — click a badge below to flip that dealer's shipping origin.
+          Editing on — click a badge to flip shipping origin, the pencil to rename, or the trash icon to delete.
         </div>
       )}
-      <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-        {rows.map((d, i) => (
-          <div key={d.name} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px',
-            borderTop: '1px solid #EFEDE4', borderLeft: i % 2 === 1 ? '1px solid #EFEDE4' : 'none'
-          }}>
-            <span style={{ fontSize: 13 }}>{d.name}</span>
-            {editMode ? (
-              <button onClick={() => toggleDealerOrigin(d.name)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+      <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden', display: 'grid', gridTemplateColumns: editMode ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+        {rows.map((d, i) => {
+          const isEditing = editingName === d.name;
+          const isConfirmingDelete = confirmDeleteName === d.name;
+          return (
+            <div key={d.name} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', gap: 10,
+              borderTop: '1px solid #EFEDE4', borderLeft: (!editMode && i % 2 === 1) ? '1px solid #EFEDE4' : 'none'
+            }}>
+              {isEditing ? (
+                <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveRename(d.name); if (e.key === 'Escape') setEditingName(null); }}
+                  style={{ flex: 1, padding: '4px 8px', borderRadius: 5, border: '1px solid #33546E', fontSize: 13 }} />
+              ) : (
+                <span style={{ fontSize: 13 }}>{d.name}</span>
+              )}
+
+              {isConfirmingDelete ? (
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5, flexShrink: 0 }}>
+                  <span style={{ color: '#B23A2E' }}>
+                    {openOrderCount(d.name) > 0 ? `${openOrderCount(d.name)} open order(s) — delete anyway?` : 'Delete this dealer?'}
+                  </span>
+                  <button onClick={() => { onDelete(d.name); setConfirmDeleteName(null); }} style={{ background: '#B23A2E', color: 'white', border: 'none', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Yes</button>
+                  <button onClick={() => setConfirmDeleteName(null)} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>Cancel</button>
+                </span>
+              ) : isEditing ? (
+                <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => saveRename(d.name)} style={{ background: '#3E7B4F', color: 'white', border: 'none', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Save</button>
+                  <button onClick={() => setEditingName(null)} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>Cancel</button>
+                </span>
+              ) : editMode ? (
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  <button onClick={() => toggleDealerOrigin(d.name)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+                    <Badge color={LOCATIONS[d.origin].color} bg="transparent" border={LOCATIONS[d.origin].color}>{d.origin}</Badge>
+                  </button>
+                  <button onClick={() => { setEditingName(d.name); setRenameValue(d.name); }} style={{ background: '#EAF0F4', border: '1px solid #C7D6DE', color: '#33546E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><Edit3 size={11} /></button>
+                  <button onClick={() => setConfirmDeleteName(d.name)} style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><X size={11} /></button>
+                </span>
+              ) : (
                 <Badge color={LOCATIONS[d.origin].color} bg="transparent" border={LOCATIONS[d.origin].color}>{d.origin}</Badge>
-              </button>
-            ) : (
-              <Badge color={LOCATIONS[d.origin].color} bg="transparent" border={LOCATIONS[d.origin].color}>{d.origin}</Badge>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1172,6 +1284,7 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
     </div>
   );
 }
+
 function ImportView({ openImport }) {
   const cards = [
     {
@@ -1287,6 +1400,120 @@ function SoldUnitsView({ salesLog }) {
             ))}
             {rows.length === 0 && (
               <tr><td colSpan={5} style={{ ...td(), textAlign: 'center', color: '#8A8F97', padding: 26 }}>No sales recorded for this filter yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ModelsView({ inventory, orders, pendingProduction, onAdd, onRename, onDelete }) {
+  const [search, setSearch] = useState('');
+  const [newSku, setNewSku] = useState('');
+  const [editingSku, setEditingSku] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [confirmDeleteSku, setConfirmDeleteSku] = useState(null);
+
+  const rows = inventory
+    .filter(r => r.sku.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.sku.localeCompare(b.sku));
+
+  function openOrderCount(sku) {
+    return orders.filter(o => o.sku === sku && o.backordered > 0).length;
+  }
+  function saveRename(oldSku) {
+    if (renameValue.trim() && renameValue.trim() !== oldSku) onRename(oldSku, renameValue.trim());
+    setEditingSku(null);
+  }
+  function submitAdd() {
+    if (newSku.trim()) { onAdd(newSku); setNewSku(''); }
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Models</div>
+      <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 8 }}>
+        Add, rename, or remove bumper models from the catalog. Renaming a model updates every order and log entry that references it, so nothing gets orphaned.
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#8A8F97' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search model…" style={{
+            padding: '6px 28px 6px 26px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, width: 220
+          }} />
+          {search && <ClearButton onClick={() => setSearch('')} />}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+          <input value={newSku} onChange={e => setNewSku(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitAdd(); }}
+            placeholder="New model code (e.g. FBMC 03-07)" style={{
+              padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, width: 220
+            }} />
+          <button onClick={submitAdd} style={{
+            display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
+            border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
+          }}><Plus size={13} /> Add Model</button>
+        </div>
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden' }}>
+        <table>
+          <thead>
+            <tr style={{ background: '#1C2126', color: '#F5F3EE' }}>
+              <th style={th()}>Model</th>
+              <th style={{ ...th(), textAlign: 'right' }}>MX Qty</th>
+              <th style={{ ...th(), textAlign: 'right' }}>US Qty</th>
+              <th style={{ ...th(), textAlign: 'right' }}>In Production</th>
+              <th style={th()}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const isEditing = editingSku === r.sku;
+              const isConfirmingDelete = confirmDeleteSku === r.sku;
+              const pending = pendingProduction[r.sku] || 0;
+              return (
+                <tr key={r.sku} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
+                  <td style={td()}>
+                    {isEditing ? (
+                      <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveRename(r.sku); if (e.key === 'Escape') setEditingSku(null); }}
+                        style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid #33546E', fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, width: 150 }} />
+                    ) : (
+                      <SkuTag sku={r.sku} />
+                    )}
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}>{r.mx}</td>
+                  <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}>{r.us}</td>
+                  <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", color: pending > 0 ? '#B58A2E' : '#C9C5B8' }}>{pending || '—'}</td>
+                  <td style={{ ...td(), textAlign: 'right' }}>
+                    {isConfirmingDelete ? (
+                      <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center', fontSize: 11.5 }}>
+                        <span style={{ color: '#B23A2E' }}>
+                          {openOrderCount(r.sku) > 0 ? `${openOrderCount(r.sku)} open order(s) — delete anyway?` : 'Delete this model?'}
+                        </span>
+                        <button onClick={() => { onDelete(r.sku); setConfirmDeleteSku(null); }} style={{ background: '#B23A2E', color: 'white', border: 'none', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Yes</button>
+                        <button onClick={() => setConfirmDeleteSku(null)} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>Cancel</button>
+                      </span>
+                    ) : isEditing ? (
+                      <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => saveRename(r.sku)} style={{ background: '#3E7B4F', color: 'white', border: 'none', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Save</button>
+                        <button onClick={() => setEditingSku(null)} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>Cancel</button>
+                      </span>
+                    ) : (
+                      <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => { setEditingSku(r.sku); setRenameValue(r.sku); }} style={{ background: '#EAF0F4', border: '1px solid #C7D6DE', color: '#33546E', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><Edit3 size={11} /> Rename</button>
+                        <button onClick={() => setConfirmDeleteSku(r.sku)} style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Delete</button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr><td colSpan={5} style={{ ...td(), textAlign: 'center', color: '#8A8F97', padding: 26 }}>No models match.</td></tr>
             )}
           </tbody>
         </table>
