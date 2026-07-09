@@ -537,7 +537,7 @@ export default function App() {
             <SkuLookupView inventory={inventory} openOrders={openOrders} setShipModal={setShipModal} />
           )}
           {tab === 'dealer' && (
-            <DealerLookupView dealers={dealers} openOrders={openOrders} />
+            <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} />
           )}
           {tab === 'production' && (
             <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingProduction={pendingProduction} onSaveProduction={saveProductionOrder} />
@@ -1069,7 +1069,7 @@ function IssuesView({ dataIssues, openOrders }) {
   );
 }
 
-function DealerLookupView({ dealers, openOrders }) {
+function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
   const [selected, setSelected] = useState('');
   const options = useMemo(() => dealers.map(d => d.name).sort(), [dealers]);
   const dealerInfo = dealers.find(d => normName(d.name) === normName(selected));
@@ -1080,6 +1080,20 @@ function DealerLookupView({ dealers, openOrders }) {
       .sort((a, b) => (parseDate(a.date)?.getTime() ?? Infinity) - (parseDate(b.date)?.getTime() ?? Infinity));
   }, [openOrders, selected, dealerInfo]);
   const totalUnits = rows.reduce((s, o) => s + o.backordered, 0);
+
+  // Same priority logic as Bumper Lookup / Production Planning: for each model + warehouse,
+  // stock gets allocated oldest-order-first across ALL dealers, not just this one — so this
+  // dealer's spot in line depends on who else is waiting on the same model.
+  const coverageById = useMemo(() => {
+    const map = {};
+    Object.entries(ordersByLocSku).forEach(([key, list]) => {
+      const [loc, sku] = key.split('|');
+      const invRow = inventory.find(r => r.sku === sku);
+      const onHand = invRow ? (loc === 'MX' ? invRow.mx : invRow.us) : 0;
+      computeCoverage(list, onHand).forEach(o => { map[o.id] = o; });
+    });
+    return map;
+  }, [ordersByLocSku, inventory]);
 
   return (
     <div>
@@ -1126,11 +1140,17 @@ function DealerLookupView({ dealers, openOrders }) {
                     <th style={{ ...th(), textAlign: 'right' }}>Owed</th>
                     <th style={th()}>Ships from</th>
                     <th style={{ ...th(), textAlign: 'right' }}>Days waiting</th>
+                    <th style={th()}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((o, i) => {
                     const days = daysSince(o.date);
+                    const cov = coverageById[o.id];
+                    const statusColor = cov ? (cov.fullyCovered ? '#3E7B4F' : (cov.coveredQty > 0 ? '#B58A2E' : '#B23A2E')) : '#8A8F97';
+                    const statusLabel = cov
+                      ? (cov.fullyCovered ? 'Ready to ship' : (cov.coveredQty > 0 ? `Partial (${cov.coveredQty}/${cov.backordered})` : 'Waiting on stock'))
+                      : '—';
                     return (
                       <tr key={o.id} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
                         <td style={td()}><SkuTag sku={o.sku} />{!o.skuKnown && <AlertTriangle size={11} color="#B23A2E" style={{ marginLeft: 6, display: 'inline' }} />}</td>
@@ -1139,6 +1159,7 @@ function DealerLookupView({ dealers, openOrders }) {
                         <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700 }}>{o.backordered}</td>
                         <td style={td()}><Badge color={LOCATIONS[o.shipFrom].color} bg="transparent" border={LOCATIONS[o.shipFrom].color}>{o.shipFrom}</Badge></td>
                         <td style={{ ...td(), textAlign: 'right', fontSize: 12.5, fontWeight: days > 30 ? 700 : 400, color: days > 30 ? '#B23A2E' : '#5B6470' }}>{days ?? '—'}</td>
+                        <td style={td()}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
                       </tr>
                     );
                   })}
@@ -1151,7 +1172,6 @@ function DealerLookupView({ dealers, openOrders }) {
     </div>
   );
 }
-
 function ImportView({ openImport }) {
   const cards = [
     {
