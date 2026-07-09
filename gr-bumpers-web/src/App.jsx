@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown } from 'lucide-react';
+import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storageGet, storageSet } from './storage.js';
 
@@ -345,6 +345,10 @@ export default function App() {
     setDealers(next);
     await storageSet('bumper-dealers', next, true);
   }
+  async function persistToolboxItems(next) {
+    setToolboxItems(next);
+    await storageSet('bumper-toolbox', next, true);
+  }
   async function persistSales(next) {
     setSalesLog(next);
     await storageSet('bumper-sales', next, true);
@@ -513,6 +517,16 @@ export default function App() {
     showToast(`Removed model ${sku}`);
   }
 
+  function resetData(categories) {
+    const set = new Set(categories);
+    if (set.has('models')) { persistInventory([]); persistToolboxItems([]); }
+    if (set.has('dealers')) { persistDealers([]); }
+    if (set.has('orders')) { persistOrders([]); }
+    if (set.has('sold')) { persistSales([]); }
+    if (set.has('production')) { persistPendingProduction({}); persistProductionLog([]); }
+    showToast(`Deleted: ${categories.join(', ')}`);
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, fontFamily: "'Inter', sans-serif", color: '#5B6470', gap: 10 }}>
@@ -540,6 +554,7 @@ export default function App() {
     { group: 'Data', items: [
       { id: 'import', label: 'Import', icon: Upload },
       { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issueCount },
+      { id: 'reset', label: 'Reset Data', icon: Trash2 },
     ] },
   ];
 
@@ -628,6 +643,9 @@ export default function App() {
           )}
           {tab === 'issues' && (
             <IssuesView dataIssues={dataIssues} openOrders={openOrders} />
+          )}
+          {tab === 'reset' && (
+            <ResetDataView onReset={resetData} />
           )}
         </div>
       </div>
@@ -1518,6 +1536,117 @@ function ModelsView({ inventory, orders, pendingProduction, onAdd, onRename, onD
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+const ADMIN_CODE = '0000';
+
+function ResetDataView({ onReset }) {
+  const [code, setCode] = useState('');
+  const [unlocked, setUnlocked] = useState(false);
+  const [error, setError] = useState(false);
+  const [selected, setSelected] = useState({});
+  const [confirming, setConfirming] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  const CATEGORIES = [
+    { id: 'models', label: 'Models & Inventory' },
+    { id: 'dealers', label: 'Dealers' },
+    { id: 'orders', label: 'Orders' },
+    { id: 'sold', label: 'Sold Units log' },
+    { id: 'production', label: 'Production tracking' },
+  ];
+
+  function tryUnlock() {
+    if (code === ADMIN_CODE) { setUnlocked(true); setError(false); }
+    else { setError(true); }
+  }
+
+  function toggle(id) {
+    setSelected(s => ({ ...s, [id]: !s[id] }));
+  }
+
+  const selectedIds = CATEGORIES.filter(c => selected[c.id]).map(c => c.id);
+
+  function handleDeleteClick() {
+    if (selectedIds.length === 0) return;
+    setConfirming(true);
+    setConfirmText('');
+  }
+
+  function handleConfirm() {
+    onReset(selectedIds);
+    setSelected({});
+    setConfirming(false);
+    setConfirmText('');
+  }
+
+  if (!unlocked) {
+    return (
+      <div>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Reset Data</div>
+        <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>Enter the admin code to unlock this section.</div>
+        <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 20, maxWidth: 300 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#5B6470' }}>
+            <Lock size={16} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Locked</span>
+          </div>
+          <input type="password" value={code} onChange={e => { setCode(e.target.value); setError(false); }}
+            onKeyDown={e => { if (e.key === 'Enter') tryUnlock(); }}
+            placeholder="Admin code" style={{
+              width: '100%', padding: '8px 10px', borderRadius: 7, border: `1px solid ${error ? '#B23A2E' : '#DCD9CE'}`,
+              fontSize: 14, marginBottom: 8, letterSpacing: '0.2em', textAlign: 'center'
+            }} />
+          {error && <div style={{ color: '#B23A2E', fontSize: 12, marginBottom: 8 }}>Incorrect code.</div>}
+          <button onClick={tryUnlock} style={{ width: '100%', background: '#1C2126', color: 'white', border: 'none', borderRadius: 7, padding: '9px', fontSize: 13, fontWeight: 700 }}>Unlock</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Reset Data</div>
+      <div style={{ fontSize: 12.5, color: '#B23A2E', marginBottom: 14 }}>
+        Check what you want to permanently delete. This can't be undone.
+      </div>
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: '4px 16px', maxWidth: 380, marginBottom: 14 }}>
+        {CATEGORIES.map((c, i) => (
+          <label key={c.id} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', fontSize: 13.5, cursor: 'pointer',
+            borderTop: i ? '1px solid #EFEDE4' : 'none'
+          }}>
+            <input type="checkbox" checked={!!selected[c.id]} onChange={() => toggle(c.id)} style={{ width: 15, height: 15 }} />
+            {c.label}
+          </label>
+        ))}
+      </div>
+
+      {!confirming ? (
+        <button disabled={selectedIds.length === 0} onClick={handleDeleteClick} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: selectedIds.length ? '#B23A2E' : '#DCD9CE', color: 'white', border: 'none',
+          borderRadius: 7, padding: '9px 14px', fontSize: 13, fontWeight: 700
+        }}><Trash2 size={14} /> Delete Selected</button>
+      ) : (
+        <div style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 10, padding: 16, maxWidth: 380 }}>
+          <div style={{ fontSize: 13, color: '#B23A2E', marginBottom: 10, fontWeight: 600 }}>
+            This will permanently delete: {selectedIds.map(id => CATEGORIES.find(c => c.id === id).label).join(', ')}.
+          </div>
+          <div style={{ fontSize: 12, color: '#5B6470', marginBottom: 8 }}>Type DELETE to confirm.</div>
+          <input value={confirmText} onChange={e => setConfirmText(e.target.value)} style={{
+            width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, marginBottom: 10
+          }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button disabled={confirmText !== 'DELETE'} onClick={handleConfirm} style={{
+              flex: 1, background: confirmText === 'DELETE' ? '#B23A2E' : '#DCD9CE', color: 'white', border: 'none',
+              borderRadius: 7, padding: '9px', fontSize: 13, fontWeight: 700
+            }}>Confirm Delete</button>
+            <button onClick={() => setConfirming(false)} style={{ flex: 1, background: 'white', border: '1px solid #DCD9CE', borderRadius: 7, padding: '9px', fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
