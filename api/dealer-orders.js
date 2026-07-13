@@ -11,6 +11,7 @@ const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TO
 const redis = url && token ? new Redis({ url, token }) : null;
 
 const ORDERS_KEY = 'gr-bumpers:bumper-orders';
+const PENDING_KEY = 'gr-bumpers:bumper-new-orders';
 const SESSIONS_KEY = 'gr-bumpers:dealer-sessions';
 const INVENTORY_KEY = 'gr-bumpers:bumper-inventory';
 
@@ -32,9 +33,14 @@ export default async function handler(req, res) {
       const dealerName = await dealerForToken(sessionToken);
       if (!dealerName) return res.status(401).json({ error: 'Not logged in.' });
 
-      const allOrders = (await redis.get(ORDERS_KEY)) || [];
-      const mine = allOrders.filter(o => (o.dealer || '').trim().toLowerCase() === dealerName.trim().toLowerCase());
-      return res.status(200).json({ dealerName, orders: mine });
+      const [allOrders, allPending] = await Promise.all([
+        redis.get(ORDERS_KEY),
+        redis.get(PENDING_KEY),
+      ]);
+      const matches = o => (o.dealer || '').trim().toLowerCase() === dealerName.trim().toLowerCase();
+      const mineOpen = (allOrders || []).filter(matches).map(o => ({ ...o, pending: false }));
+      const minePending = (allPending || []).filter(matches).map(o => ({ ...o, pending: true }));
+      return res.status(200).json({ dealerName, orders: [...minePending, ...mineOpen] });
     }
 
     if (req.method === 'POST') {
@@ -54,15 +60,15 @@ export default async function handler(req, res) {
       const unknown = cleanLines.find(l => !validSkus.has(l.sku));
       if (unknown) return res.status(400).json({ error: `Unknown model: ${unknown.sku}` });
 
-      const allOrders = (await redis.get(ORDERS_KEY)) || [];
+      const allPending = (await redis.get(PENDING_KEY)) || [];
       const today = new Date();
       const dateStr = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
       const newOrders = cleanLines.map((l, i) => ({
         id: 'D' + Date.now() + '_' + i, sku: l.sku, dealer: dealerName, date: dateStr, due: '', num: '',
         po: po || '', qty: l.qty, invoiced: 0, backordered: l.qty,
       }));
-      await redis.set(ORDERS_KEY, [...newOrders, ...allOrders]);
-      return res.status(200).json({ ok: true, orders: newOrders });
+      await redis.set(PENDING_KEY, [...newOrders, ...allPending]);
+      return res.status(200).json({ ok: true, orders: newOrders, pending: true });
     }
 
     res.setHeader('Allow', 'GET, POST');

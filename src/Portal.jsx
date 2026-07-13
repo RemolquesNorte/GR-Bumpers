@@ -174,7 +174,7 @@ function PortalHome({ dealerName, token, onLogout }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not place order.');
       setLines([{ sku: '', qty: '' }]); setPo('');
-      setToast(validLines.length > 1 ? `Order placed — ${validLines.length} models` : 'Order placed');
+      setToast(validLines.length > 1 ? `Order request sent — ${validLines.length} models, pending confirmation` : 'Order request sent — pending confirmation');
       await loadOrders();
     } catch (err) {
       setError(err.message);
@@ -206,10 +206,11 @@ function PortalHome({ dealerName, token, onLogout }) {
       </div>
 
       <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Package size={15} color="#33546E" />
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 14, textTransform: 'uppercase' }}>Place an order</div>
         </div>
+        <div style={{ fontSize: 11.5, color: '#8A8F97', marginBottom: 14 }}>Your order request will show as "Pending confirmation" until we confirm it on our end.</div>
         <form onSubmit={submitOrder}>
           <label style={labelStyle()}>PO # (optional, applies to the whole order)</label>
           <input value={po} onChange={e => setPo(e.target.value)} style={fieldStyle()} />
@@ -279,9 +280,9 @@ function PortalHome({ dealerName, token, onLogout }) {
                   <td style={td()}>
                     <span style={{
                       fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, textTransform: 'uppercase',
-                      color: o.backordered > 0 ? '#B58A2E' : '#3E7B4F',
-                      background: o.backordered > 0 ? '#FBF6EC' : '#EAF4EC'
-                    }}>{o.backordered > 0 ? 'Open' : 'Fulfilled'}</span>
+                      color: o.pending ? '#8A6D1F' : (o.backordered > 0 ? '#B58A2E' : '#3E7B4F'),
+                      background: o.pending ? '#F3EFE6' : (o.backordered > 0 ? '#FBF6EC' : '#EAF4EC')
+                    }}>{o.pending ? 'Pending confirmation' : (o.backordered > 0 ? 'Open' : 'Fulfilled')}</span>
                   </td>
                 </tr>
               ))}
