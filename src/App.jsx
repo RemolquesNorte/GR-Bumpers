@@ -254,6 +254,7 @@ export default function App() {
   const [dealerModal, setDealerModal] = useState(false);
   const [importModal, setImportModal] = useState(null);
   const [dealerLoginModal, setDealerLoginModal] = useState(null);
+  const [editOrderModal, setEditOrderModal] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -491,6 +492,17 @@ export default function App() {
     setOrderModal(false);
   }
 
+  function updateOrder(id, updates) {
+    const next = orders.map(o => o.id === id ? { ...o, ...updates } : o);
+    persistOrders(next);
+    showToast('Order updated');
+  }
+
+  function deleteOrder(id) {
+    persistOrders(orders.filter(o => o.id !== id));
+    showToast('Order deleted');
+  }
+
   function addDealer(d) {
     if (dealers.some(x => normName(x.name) === normName(d.name))) {
       showToast('Dealer already exists');
@@ -684,7 +696,7 @@ export default function App() {
             <SoldUnitsView salesLog={salesLog} />
           )}
           {tab === 'orders' && (
-            <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} />
+            <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} setEditOrderModal={setEditOrderModal} />
           )}
           {tab === 'models' && (
             <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
@@ -721,6 +733,9 @@ export default function App() {
       )}
       {dealerLoginModal && (
         <DealerLoginModal dealerName={dealerLoginModal} onClose={() => setDealerLoginModal(null)} />
+      )}
+      {editOrderModal && (
+        <EditOrderModal order={editOrderModal} dealers={dealers} inventory={inventory} onClose={() => setEditOrderModal(null)} onSave={updateOrder} onDelete={deleteOrder} />
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
@@ -1092,7 +1107,7 @@ function SkuLookupView({ inventory, openOrders, setShipModal }) {
   );
 }
 
-function OrdersView({ orders, onAdd, setShipModal }) {
+function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
   const [filter, setFilter] = useState('open');
   const [q, setQ] = useState('');
   const rows = orders
@@ -1147,12 +1162,18 @@ function OrdersView({ orders, onAdd, setShipModal }) {
                 <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", color: '#3E7B4F' }}>{o.invoiced}</td>
                 <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: o.backordered > 0 ? '#B23A2E' : '#C9C5B8' }}>{o.backordered}</td>
                 <td style={td()}>
-                  {o.backordered > 0 && (
-                    <button onClick={() => setShipModal(o)} style={{
-                      fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
-                      borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
-                    }}><ArrowRight size={11} /> Ship</button>
-                  )}
+                  <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-start' }}>
+                    {o.backordered > 0 && (
+                      <button onClick={() => setShipModal(o)} style={{
+                        fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
+                        borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
+                      }}><ArrowRight size={11} /> Ship</button>
+                    )}
+                    <button onClick={() => setEditOrderModal(o)} style={{
+                      fontSize: 11, fontWeight: 700, color: '#5B6470', background: '#F3F2EE', border: '1px solid #DCD9CE',
+                      borderRadius: 5, padding: '3px 7px', display: 'flex', alignItems: 'center'
+                    }}><Edit3 size={11} /></button>
+                  </span>
                 </td>
               </tr>
             ))}
@@ -2240,6 +2261,91 @@ function DealerLoginModal({ dealerName, onClose }) {
             }}>Remove login</button>
           )}
         </>
+      )}
+    </ModalShell>
+  );
+}
+
+function EditOrderModal({ order, dealers, inventory, onClose, onSave, onDelete }) {
+  const [sku, setSku] = useState(order.sku);
+  const [dealer, setDealer] = useState(order.dealer);
+  const [po, setPo] = useState(order.po || '');
+  const [date, setDate] = useState(order.date || '');
+  const [qty, setQty] = useState(order.qty);
+  const [invoiced, setInvoiced] = useState(order.invoiced);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  function save() {
+    const cleanQty = Math.max(0, parseInt(qty, 10) || 0);
+    const cleanInvoiced = Math.max(0, Math.min(cleanQty, parseInt(invoiced, 10) || 0));
+    onSave(order.id, {
+      sku, dealer, po, date, qty: cleanQty, invoiced: cleanInvoiced,
+      backordered: cleanQty - cleanInvoiced,
+    });
+    onClose();
+  }
+
+  return (
+    <ModalShell title="Edit order" onClose={onClose} width={420}>
+      <label style={labelStyle()}>Model</label>
+      <select value={sku} onChange={e => setSku(e.target.value)} style={fieldStyle()}>
+        {inventory.map(i => <option key={i.sku} value={i.sku}>{i.sku}</option>)}
+        {!inventory.some(i => i.sku === sku) && <option value={sku}>{sku} (not in catalog)</option>}
+      </select>
+
+      <label style={labelStyle()}>Dealer</label>
+      <input list="edit-order-dealer-list" value={dealer} onChange={e => setDealer(e.target.value)} style={fieldStyle()} />
+      <datalist id="edit-order-dealer-list">
+        {dealers.map(d => <option key={d.name} value={d.name} />)}
+      </datalist>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle()}>PO #</label>
+          <input value={po} onChange={e => setPo(e.target.value)} style={fieldStyle()} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle()}>Date</label>
+          <input value={date} onChange={e => setDate(e.target.value)} placeholder="M/D/YYYY" style={fieldStyle()} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle()}>Total ordered</label>
+          <input type="number" min="0" value={qty} onChange={e => setQty(e.target.value)} style={fieldStyle()} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle()}>Already shipped</label>
+          <input type="number" min="0" value={invoiced} onChange={e => setInvoiced(e.target.value)} style={fieldStyle()} />
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#8A8F97', marginTop: -6, marginBottom: 14 }}>
+        Owed will be recalculated as ordered minus shipped.
+      </div>
+
+      <button onClick={save} style={{
+        width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
+        padding: '9px', fontSize: 13.5, fontWeight: 700, marginBottom: 8
+      }}>Save changes</button>
+
+      {confirmingDelete ? (
+        <div style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 8, padding: 12 }}>
+          <div style={{ fontSize: 12.5, color: '#B23A2E', marginBottom: 8 }}>Delete this order line? This can't be undone.</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { onDelete(order.id); onClose(); }} style={{
+              flex: 1, background: '#B23A2E', color: 'white', border: 'none', borderRadius: 7, padding: '8px', fontSize: 12.5, fontWeight: 700
+            }}>Delete</button>
+            <button onClick={() => setConfirmingDelete(false)} style={{
+              flex: 1, background: 'white', border: '1px solid #DCD9CE', borderRadius: 7, padding: '8px', fontSize: 12.5
+            }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setConfirmingDelete(true)} style={{
+          width: '100%', background: 'white', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 8,
+          padding: '9px', fontSize: 13, fontWeight: 700
+        }}>Delete order</button>
       )}
     </ModalShell>
   );
