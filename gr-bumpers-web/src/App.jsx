@@ -69,6 +69,15 @@ function formatToday() {
   const d = new Date();
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 }
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function isoToUS(iso) {
+  if (!iso) return formatToday();
+  const [y, m, d] = iso.split('-');
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+}
 
 function parseDate(str) {
   if (!str) return null;
@@ -231,7 +240,7 @@ export default function App() {
   const [dealers, setDealers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [salesLog, setSalesLog] = useState([]);
-  const [pendingProduction, setPendingProduction] = useState({});
+  const [productionBatches, setProductionBatches] = useState([]);
   const [productionLog, setProductionLog] = useState([]);
   const [tab, setTab] = useState('production');
   const [toast, setToast] = useState(null);
@@ -242,7 +251,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [inv, tb, dl, ord, meta, sales, pending, prodLog] = await Promise.all([
+      const [inv, tb, dl, ord, meta, sales, legacyPending, prodLog, batches] = await Promise.all([
         storageGet('bumper-inventory', true),
         storageGet('bumper-toolbox', true),
         storageGet('bumper-dealers', true),
@@ -251,6 +260,7 @@ export default function App() {
         storageGet('bumper-sales', true),
         storageGet('bumper-production-pending', true),
         storageGet('bumper-production-log', true),
+        storageGet('bumper-production-batches', true),
       ]);
       let state = (inv && dl && ord)
         ? { inventory: inv, toolboxItems: tb || [], dealers: dl, orders: ord }
@@ -280,8 +290,19 @@ export default function App() {
       setDealers(state.dealers);
       setOrders(state.orders);
       setSalesLog(sales || []);
-      setPendingProduction(pending || {});
       setProductionLog(prodLog || []);
+
+      let finalBatches = batches;
+      if (!finalBatches) {
+        // One-time migration from the old {sku: qty} pending-production map, which had
+        // no date info, into dated batches (date left blank for these legacy entries).
+        finalBatches = (legacyPending && typeof legacyPending === 'object' && !Array.isArray(legacyPending))
+          ? Object.entries(legacyPending).filter(([, q]) => q > 0).map(([sku, qty]) => ({ id: 'PB-legacy-' + sku, sku, qty, date: '' }))
+          : [];
+        await storageSet('bumper-production-batches', finalBatches, true);
+      }
+      setProductionBatches(finalBatches);
+
       setLoading(false);
     })();
   }, []);
@@ -323,6 +344,12 @@ export default function App() {
     return m;
   }, [openOrders]);
 
+  const pendingBySku = useMemo(() => {
+    const m = {};
+    productionBatches.forEach(b => { m[b.sku] = (m[b.sku] || 0) + b.qty; });
+    return m;
+  }, [productionBatches]);
+
   const ordersByLocSku = useMemo(() => {
     const m = {};
     openOrders.forEach(o => {
@@ -353,9 +380,9 @@ export default function App() {
     setSalesLog(next);
     await storageSet('bumper-sales', next, true);
   }
-  async function persistPendingProduction(next) {
-    setPendingProduction(next);
-    await storageSet('bumper-production-pending', next, true);
+  async function persistProductionBatches(next) {
+    setProductionBatches(next);
+    await storageSet('bumper-production-batches', next, true);
   }
   async function persistProductionLog(next) {
     setProductionLog(next);
@@ -370,17 +397,30 @@ export default function App() {
     }
     let receivedNote = '';
     if (productionReceipts && productionReceipts.length) {
-      const nextPending = { ...pendingProduction };
+      // Apply each SKU's received units against its own oldest-first batches — same FIFO
+      // idea used everywhere else in the app, just applied to production instead of orders.
+      let nextBatches = productionBatches.map(b => ({ ...b }));
       const logEntries = [];
       productionReceipts.forEach(r => {
-        const applied = Math.min(nextPending[r.sku] || 0, r.qty);
-        nextPending[r.sku] = Math.max(0, (nextPending[r.sku] || 0) - r.qty);
+        let remaining = r.qty;
+        let applied = 0;
+        const skuBatches = nextBatches
+          .filter(b => b.sku === r.sku)
+          .sort((a, b) => (parseDate(a.date)?.getTime() ?? -Infinity) - (parseDate(b.date)?.getTime() ?? -Infinity));
+        for (const b of skuBatches) {
+          if (remaining <= 0) break;
+          const take = Math.min(b.qty, remaining);
+          b.qty -= take;
+          remaining -= take;
+          applied += take;
+        }
+        nextBatches = nextBatches.filter(b => b.qty > 0);
         logEntries.push({
           id: 'PR' + Date.now() + '_' + r.sku, type: 'received', sku: r.sku, qty: r.qty,
           appliedToPending: applied, date: r.date, previousQty: r.previousQty, newQty: r.newQty,
         });
       });
-      persistPendingProduction(nextPending);
+      persistProductionBatches(nextBatches);
       persistProductionLog([...productionLog, ...logEntries]);
       const totalApplied = logEntries.reduce((a, b) => a + b.appliedToPending, 0);
       if (totalApplied > 0) receivedNote = ` — ${totalApplied} units credited against production`;
@@ -390,18 +430,14 @@ export default function App() {
     setImportModal(null);
   }
 
-  function saveProductionOrder(items) {
+  function saveProductionOrder(items, date) {
     if (!items || items.length === 0) return;
-    const today = formatToday();
-    const nextPending = { ...pendingProduction };
-    const logEntries = [];
-    items.forEach(({ sku, qty }) => {
-      nextPending[sku] = (nextPending[sku] || 0) + qty;
-      logEntries.push({ id: 'PO' + Date.now() + '_' + sku, type: 'ordered', sku, qty, date: today });
-    });
-    persistPendingProduction(nextPending);
+    const orderDate = date || formatToday();
+    const newBatches = items.map(({ sku, qty }) => ({ id: 'PB' + Date.now() + '_' + sku, sku, qty, date: orderDate }));
+    persistProductionBatches([...productionBatches, ...newBatches]);
+    const logEntries = items.map(({ sku, qty }) => ({ id: 'PO' + Date.now() + '_' + sku, type: 'ordered', sku, qty, date: orderDate }));
     persistProductionLog([...productionLog, ...logEntries]);
-    showToast(`Pedido de defensas saved — ${items.length} model${items.length === 1 ? '' : 's'} sent to production`);
+    showToast(`Pedido de defensas saved for ${orderDate} — ${items.length} model${items.length === 1 ? '' : 's'} sent to production`);
   }
 
   function applyOrdersImport(nextOrders) {
@@ -499,11 +535,8 @@ export default function App() {
 
     persistOrders(orders.map(o => o.sku === oldSku ? { ...o, sku: clean } : o));
 
-    if (pendingProduction[oldSku]) {
-      const nextPending = { ...pendingProduction };
-      nextPending[clean] = (nextPending[clean] || 0) + nextPending[oldSku];
-      delete nextPending[oldSku];
-      persistPendingProduction(nextPending);
+    if (productionBatches.some(b => b.sku === oldSku)) {
+      persistProductionBatches(productionBatches.map(b => b.sku === oldSku ? { ...b, sku: clean } : b));
     }
 
     persistSales(salesLog.map(s => s.sku === oldSku ? { ...s, sku: clean } : s));
@@ -523,7 +556,7 @@ export default function App() {
     if (set.has('dealers')) { persistDealers([]); }
     if (set.has('orders')) { persistOrders([]); }
     if (set.has('sold')) { persistSales([]); }
-    if (set.has('production')) { persistPendingProduction({}); persistProductionLog([]); }
+    if (set.has('production')) { persistProductionBatches([]); persistProductionLog([]); }
     showToast(`Deleted: ${categories.join(', ')}`);
   }
 
@@ -624,7 +657,7 @@ export default function App() {
             <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} />
           )}
           {tab === 'production' && (
-            <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingProduction={pendingProduction} onSaveProduction={saveProductionOrder} />
+            <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingBySku={pendingBySku} productionBatches={productionBatches} onSaveProduction={saveProductionOrder} />
           )}
           {tab === 'sold' && (
             <SoldUnitsView salesLog={salesLog} />
@@ -633,7 +666,7 @@ export default function App() {
             <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} />
           )}
           {tab === 'models' && (
-            <ModelsView inventory={inventory} orders={orders} pendingProduction={pendingProduction} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
+            <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
           )}
           {tab === 'dealers' && (
             <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} />
@@ -660,7 +693,7 @@ export default function App() {
         <DealerModal onClose={() => setDealerModal(false)} onAdd={addDealer} />
       )}
       {(importModal === 'MX' || importModal === 'US') && (
-        <ImportModal location={importModal} inventory={inventory} pendingProduction={pendingProduction} onClose={() => setImportModal(null)} onApply={applyImport} />
+        <ImportModal location={importModal} inventory={inventory} pendingBySku={pendingBySku} onClose={() => setImportModal(null)} onApply={applyImport} />
       )}
       {importModal === 'ORDERS' && (
         <OrdersImportModal onClose={() => setImportModal(null)} onApply={applyOrdersImport} />
@@ -689,7 +722,7 @@ function computeCoverage(lineOrders, onHand) {
 function th() { return { padding: '5px 9px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }; }
 function td() { return { padding: '5px 9px', fontSize: 12, verticalAlign: 'middle' }; }
 
-function ProductionTable({ title, color, rows, orderQty, setQty }) {
+function ProductionTable({ title, color, rows, orderQty, setQty, pendingBySku }) {
   if (rows.length === 0) return null;
   return (
     <div style={{ marginBottom: 10 }}>
@@ -714,10 +747,14 @@ function ProductionTable({ title, color, rows, orderQty, setQty }) {
           </thead>
           <tbody>
             {rows.map((r, i) => {
+              const pending = pendingBySku[r.sku] || 0;
               return (
                 <tr key={r.sku} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
                   <td style={td()}><SkuTag sku={r.sku} /></td>
-                  <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}>{r.mx}</td>
+                  <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    {r.mx}
+                    {pending > 0 && <span title={`${pending} in production, not yet received`} style={{ fontSize: 10, color: '#B58A2E', marginLeft: 3 }}>+{pending}</span>}
+                  </td>
                   <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", color: r.mxDemand > 0 ? '#1C2126' : '#C9C5B8' }}>{r.mxDemand || '—'}</td>
                   <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: r.mxNet < 0 ? '#B23A2E' : '#3E7B4F' }}>{r.mxNet > 0 ? '+' : ''}{r.mxNet}</td>
                   <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", borderLeft: '1px solid #EFEDE4' }}>{r.us}</td>
@@ -748,30 +785,34 @@ function ProductionTable({ title, color, rows, orderQty, setQty }) {
   );
 }
 
-function InProductionPanel({ pendingProduction }) {
-  const entries = Object.entries(pendingProduction)
-    .filter(([, qty]) => qty > 0)
-    .sort((a, b) => a[0].localeCompare(b[0]));
-  const total = entries.reduce((s, [, qty]) => s + qty, 0);
+function InProductionPanel({ productionBatches }) {
+  const batches = productionBatches
+    .filter(b => b.qty > 0)
+    .sort((a, b) => a.sku.localeCompare(b.sku) || ((parseDate(a.date)?.getTime() ?? -Infinity) - (parseDate(b.date)?.getTime() ?? -Infinity)));
+  const total = batches.reduce((s, b) => s + b.qty, 0);
+  const modelCount = new Set(batches.map(b => b.sku)).size;
 
   const columns = [];
-  for (let i = 0; i < entries.length; i += 5) columns.push(entries.slice(i, i + 5));
+  for (let i = 0; i < batches.length; i += 5) columns.push(batches.slice(i, i + 5));
 
   return (
     <div style={{ background: '#1C2126', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: entries.length ? 6 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: batches.length ? 6 : 0 }}>
         <Factory size={13} color="#B7BCC2" />
         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#F5F3EE' }}>In Production</div>
-        {total > 0 && <span style={{ fontSize: 11, color: '#8A8F97' }}>· {total} units across {entries.length} model{entries.length === 1 ? '' : 's'}</span>}
+        {total > 0 && <span style={{ fontSize: 11, color: '#8A8F97' }}>· {total} units across {modelCount} model{modelCount === 1 ? '' : 's'}</span>}
       </div>
-      {entries.length === 0 ? (
+      {batches.length === 0 ? (
         <div style={{ fontSize: 12, color: '#8A8F97' }}>Nothing pending — save a pedido below to send models to production.</div>
       ) : (
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {columns.map((col, i) => (
             <div key={i} style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, color: '#F5F3EE', lineHeight: 1.7 }}>
-              {col.map(([sku, qty]) => (
-                <div key={sku}>{sku} = {qty}</div>
+              {col.map(b => (
+                <div key={b.id}>
+                  {b.sku} = {b.qty}
+                  {b.date && <span style={{ color: '#8A8F97', fontSize: 11 }}> ({b.date})</span>}
+                </div>
               ))}
             </div>
           ))}
@@ -781,10 +822,11 @@ function InProductionPanel({ pendingProduction }) {
   );
 }
 
-function ProductionPlanningView({ inventory, demandByLocSku, pendingProduction, onSaveProduction }) {
+function ProductionPlanningView({ inventory, demandByLocSku, pendingBySku, productionBatches, onSaveProduction }) {
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState('urgent');
   const [orderQty, setOrderQty] = useState({});
+  const [orderDate, setOrderDate] = useState(todayISO());
 
   const setQty = (sku, val) => setOrderQty(prev => ({ ...prev, [sku]: val }));
 
@@ -815,8 +857,9 @@ function ProductionPlanningView({ inventory, demandByLocSku, pendingProduction, 
 
   function handleSave() {
     const items = pedidoLines.map(([sku, val]) => ({ sku, qty: parseInt(val, 10) }));
-    onSaveProduction(items);
+    onSaveProduction(items, isoToUS(orderDate));
     setOrderQty({});
+    setOrderDate(todayISO());
   }
 
   return (
@@ -828,7 +871,7 @@ function ProductionPlanningView({ inventory, demandByLocSku, pendingProduction, 
         </div>
       </div>
 
-      <InProductionPanel pendingProduction={pendingProduction} />
+      <InProductionPanel productionBatches={productionBatches} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
@@ -844,20 +887,28 @@ function ProductionPlanningView({ inventory, demandByLocSku, pendingProduction, 
         </select>
       </div>
 
-      <ProductionTable title="FB Models" color="#33546E" rows={fbRows} orderQty={orderQty} setQty={setQty} />
-      <ProductionTable title="RB Models" color="#B23A2E" rows={rbRows} orderQty={orderQty} setQty={setQty} />
-      <ProductionTable title="Other" color="#8A8F97" rows={otherRows} orderQty={orderQty} setQty={setQty} />
+      <ProductionTable title="FB Models" color="#33546E" rows={fbRows} orderQty={orderQty} setQty={setQty} pendingBySku={pendingBySku} />
+      <ProductionTable title="RB Models" color="#B23A2E" rows={rbRows} orderQty={orderQty} setQty={setQty} pendingBySku={pendingBySku} />
+      <ProductionTable title="Other" color="#8A8F97" rows={otherRows} orderQty={orderQty} setQty={setQty} pendingBySku={pendingBySku} />
 
       <div style={{ marginTop: 20, background: '#1C2126', borderRadius: 10, padding: '14px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: pedidoLines.length ? 8 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: pedidoLines.length ? 8 : 0, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 14, textTransform: 'uppercase', color: '#F5F3EE' }}>
             Pedido de defensas
           </div>
           {pedidoLines.length > 0 && (
-            <button onClick={handleSave} style={{
-              display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
-              border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 12, fontWeight: 700
-            }}><Check size={13} /> Save</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#B7BCC2' }}>
+                Date
+                <input type="date" value={orderDate} onChange={e => setOrderDate(e.target.value)} style={{
+                  padding: '4px 6px', borderRadius: 5, border: '1px solid #3A414B', background: '#2A3038', color: '#F5F3EE', fontSize: 12
+                }} />
+              </label>
+              <button onClick={handleSave} style={{
+                display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
+                border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 12, fontWeight: 700
+              }}><Check size={13} /> Save</button>
+            </div>
           )}
         </div>
         {pedidoLines.length === 0 ? (
@@ -1457,7 +1508,7 @@ function SoldUnitsView({ salesLog }) {
   );
 }
 
-function ModelsView({ inventory, orders, pendingProduction, onAdd, onRename, onDelete }) {
+function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete }) {
   const [search, setSearch] = useState('');
   const [newSku, setNewSku] = useState('');
   const [editingSku, setEditingSku] = useState(null);
@@ -1522,7 +1573,7 @@ function ModelsView({ inventory, orders, pendingProduction, onAdd, onRename, onD
             {rows.map((r, i) => {
               const isEditing = editingSku === r.sku;
               const isConfirmingDelete = confirmDeleteSku === r.sku;
-              const pending = pendingProduction[r.sku] || 0;
+              const pending = pendingBySku[r.sku] || 0;
               return (
                 <tr key={r.sku} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
                   <td style={td()}>
@@ -1786,7 +1837,7 @@ function DealerModal({ onClose, onAdd }) {
   );
 }
 
-function ImportModal({ location, inventory, pendingProduction, onClose, onApply }) {
+function ImportModal({ location, inventory, pendingBySku, onClose, onApply }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState(null);
@@ -1866,10 +1917,10 @@ function ImportModal({ location, inventory, pendingProduction, onClose, onApply 
     inventory.forEach(row => {
       const prevQty = row[locKey] || 0;
       const newQty = bySku[row.sku] !== undefined ? bySku[row.sku] : 0;
-      if (newQty > prevQty) total += Math.min(newQty - prevQty, pendingProduction[row.sku] || 0);
+      if (newQty > prevQty) total += Math.min(newQty - prevQty, pendingBySku[row.sku] || 0);
     });
     return total;
-  }, [preview, inventory, locKey, location, pendingProduction]);
+  }, [preview, inventory, locKey, location, pendingBySku]);
 
   return (
     <ModalShell title={`Import ${LOCATIONS[location].label} stock`} onClose={onClose} width={500}>
