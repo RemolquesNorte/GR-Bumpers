@@ -78,6 +78,11 @@ function isoToUS(iso) {
   const [y, m, d] = iso.split('-');
   return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
 }
+function usToISO(us) {
+  const d = parseDate(us);
+  if (!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function parseDate(str) {
   if (!str) return null;
@@ -440,6 +445,16 @@ export default function App() {
     showToast(`Pedido de defensas saved for ${orderDate} — ${items.length} model${items.length === 1 ? '' : 's'} sent to production`);
   }
 
+  function updateProductionBatch(id, updates) {
+    const next = productionBatches.map(b => b.id === id ? { ...b, ...updates } : b);
+    persistProductionBatches(next);
+  }
+
+  function deleteProductionBatch(id) {
+    persistProductionBatches(productionBatches.filter(b => b.id !== id));
+    showToast('Removed that production entry');
+  }
+
   function applyOrdersImport(nextOrders) {
     persistOrders(nextOrders);
     showToast(`Orders replaced from import — ${nextOrders.length} order lines`);
@@ -657,7 +672,7 @@ export default function App() {
             <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} />
           )}
           {tab === 'production' && (
-            <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingBySku={pendingBySku} productionBatches={productionBatches} onSaveProduction={saveProductionOrder} />
+            <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingBySku={pendingBySku} productionBatches={productionBatches} onSaveProduction={saveProductionOrder} onUpdateBatch={updateProductionBatch} onDeleteBatch={deleteProductionBatch} />
           )}
           {tab === 'sold' && (
             <SoldUnitsView salesLog={salesLog} />
@@ -785,7 +800,8 @@ function ProductionTable({ title, color, rows, orderQty, setQty, pendingBySku })
   );
 }
 
-function InProductionPanel({ productionBatches }) {
+function InProductionPanel({ productionBatches, onUpdateBatch, onDeleteBatch }) {
+  const [editMode, setEditMode] = useState(false);
   const batches = productionBatches
     .filter(b => b.qty > 0)
     .sort((a, b) => a.sku.localeCompare(b.sku) || ((parseDate(a.date)?.getTime() ?? -Infinity) - (parseDate(b.date)?.getTime() ?? -Infinity)));
@@ -797,13 +813,42 @@ function InProductionPanel({ productionBatches }) {
 
   return (
     <div style={{ background: '#1C2126', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: batches.length ? 6 : 0 }}>
-        <Factory size={13} color="#B7BCC2" />
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#F5F3EE' }}>In Production</div>
-        {total > 0 && <span style={{ fontSize: 11, color: '#8A8F97' }}>· {total} units across {modelCount} model{modelCount === 1 ? '' : 's'}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (batches.length || editMode) ? 8 : 0, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Factory size={13} color="#B7BCC2" />
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#F5F3EE' }}>In Production</div>
+          {total > 0 && <span style={{ fontSize: 11, color: '#8A8F97' }}>· {total} units across {modelCount} model{modelCount === 1 ? '' : 's'}</span>}
+        </div>
+        {batches.length > 0 && (
+          <button onClick={() => setEditMode(e => !e)} style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: editMode ? '#E8592A' : '#2A3038', color: editMode ? 'white' : '#B7BCC2',
+            border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700
+          }}><Edit3 size={11} /> {editMode ? 'Done' : 'Edit'}</button>
+        )}
       </div>
+
       {batches.length === 0 ? (
         <div style={{ fontSize: 12, color: '#8A8F97' }}>Nothing pending — save a pedido below to send models to production.</div>
+      ) : editMode ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {batches.map(b => (
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#23282F', borderRadius: 7, padding: '5px 8px' }}>
+              <div style={{ width: 130 }}><SkuTag sku={b.sku} /></div>
+              <input type="number" min="0" value={b.qty} onChange={e => onUpdateBatch(b.id, { qty: Math.max(0, parseInt(e.target.value, 10) || 0) })} style={{
+                width: 60, padding: '4px 6px', borderRadius: 5, border: '1px solid #3A414B', background: '#1C2126', color: '#F5F3EE',
+                fontFamily: "'IBM Plex Mono', monospace", fontSize: 12
+              }} />
+              <input type="date" value={usToISO(b.date)} onChange={e => onUpdateBatch(b.id, { date: isoToUS(e.target.value) })} style={{
+                padding: '4px 6px', borderRadius: 5, border: '1px solid #3A414B', background: '#1C2126', color: '#F5F3EE', fontSize: 11.5
+              }} />
+              <button onClick={() => onDeleteBatch(b.id)} style={{
+                marginLeft: 'auto', background: '#3A2020', border: '1px solid #5C2C2C', color: '#E08080',
+                borderRadius: 5, padding: '4px 7px', display: 'flex', alignItems: 'center'
+              }}><X size={12} /></button>
+            </div>
+          ))}
+        </div>
       ) : (
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {columns.map((col, i) => (
@@ -822,7 +867,7 @@ function InProductionPanel({ productionBatches }) {
   );
 }
 
-function ProductionPlanningView({ inventory, demandByLocSku, pendingBySku, productionBatches, onSaveProduction }) {
+function ProductionPlanningView({ inventory, demandByLocSku, pendingBySku, productionBatches, onSaveProduction, onUpdateBatch, onDeleteBatch }) {
   const [search, setSearch] = useState('');
   const [sortMode, setSortMode] = useState('urgent');
   const [orderQty, setOrderQty] = useState({});
@@ -871,7 +916,7 @@ function ProductionPlanningView({ inventory, demandByLocSku, pendingBySku, produ
         </div>
       </div>
 
-      <InProductionPanel productionBatches={productionBatches} />
+      <InProductionPanel productionBatches={productionBatches} onUpdateBatch={onUpdateBatch} onDeleteBatch={onDeleteBatch} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7 }}>
         <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
