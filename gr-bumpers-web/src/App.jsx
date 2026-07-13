@@ -1387,9 +1387,9 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
                     <th style={th()}>Ordered</th>
                     <th style={th()}>PO</th>
                     <th style={{ ...th(), textAlign: 'right' }}>Owed</th>
-                    <th style={th()}>Ships from</th>
-                    <th style={{ ...th(), textAlign: 'right' }}>Days waiting</th>
-                    <th style={th()}>Status</th>
+                    <th style={{ ...th(), userSelect: 'none' }}>Ships from</th>
+                    <th style={{ ...th(), textAlign: 'right', userSelect: 'none' }}>Days waiting</th>
+                    <th style={{ ...th(), userSelect: 'none' }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1406,9 +1406,9 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
                         <td style={{ ...td(), fontSize: 12.5, color: '#5B6470' }}>{o.date || '—'}</td>
                         <td style={{ ...td(), fontSize: 12.5, color: '#8A8F97' }}>{o.po || '—'}</td>
                         <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700 }}>{o.backordered}</td>
-                        <td style={td()}><Badge color={LOCATIONS[o.shipFrom].color} bg="transparent" border={LOCATIONS[o.shipFrom].color}>{o.shipFrom}</Badge></td>
-                        <td style={{ ...td(), textAlign: 'right', fontSize: 12.5, fontWeight: days > 30 ? 700 : 400, color: days > 30 ? '#B23A2E' : '#5B6470' }}>{days ?? '—'}</td>
-                        <td style={td()}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
+                        <td style={{ ...td(), userSelect: 'none' }}><Badge color={LOCATIONS[o.shipFrom].color} bg="transparent" border={LOCATIONS[o.shipFrom].color}>{o.shipFrom}</Badge></td>
+                        <td style={{ ...td(), textAlign: 'right', fontSize: 12.5, fontWeight: days > 30 ? 700 : 400, color: days > 30 ? '#B23A2E' : '#5B6470', userSelect: 'none' }}>{days ?? '—'}</td>
+                        <td style={{ ...td(), userSelect: 'none' }}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
                       </tr>
                     );
                   })}
