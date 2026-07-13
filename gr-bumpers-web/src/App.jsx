@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2 } from 'lucide-react';
+import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2, KeyRound } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storageGet, storageSet } from './storage.js';
 
@@ -253,6 +253,7 @@ export default function App() {
   const [orderModal, setOrderModal] = useState(false);
   const [dealerModal, setDealerModal] = useState(false);
   const [importModal, setImportModal] = useState(null);
+  const [dealerLoginModal, setDealerLoginModal] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -684,7 +685,7 @@ export default function App() {
             <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
           )}
           {tab === 'dealers' && (
-            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} />
+            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} onSetLogin={setDealerLoginModal} />
           )}
           {tab === 'import' && (
             <ImportView openImport={setImportModal} />
@@ -712,6 +713,9 @@ export default function App() {
       )}
       {importModal === 'ORDERS' && (
         <OrdersImportModal onClose={() => setImportModal(null)} onApply={applyOrdersImport} />
+      )}
+      {dealerLoginModal && (
+        <DealerLoginModal dealerName={dealerLoginModal} onClose={() => setDealerLoginModal(null)} />
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
@@ -1157,7 +1161,7 @@ function OrdersView({ orders, onAdd, setShipModal }) {
   );
 }
 
-function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete }) {
+function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete, onSetLogin }) {
   const [q, setQ] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingName, setEditingName] = useState(null);
@@ -1199,7 +1203,7 @@ function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onD
       </div>
       {editMode && (
         <div style={{ fontSize: 12, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 7, padding: '8px 12px', marginBottom: 7 }}>
-          Editing on — click a badge to flip shipping origin, the pencil to rename, or the trash icon to delete.
+          Editing on — click a badge to flip shipping origin, the key icon to set a portal login, the pencil to rename, or the trash icon to delete.
         </div>
       )}
       <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden', display: 'grid', gridTemplateColumns: editMode ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))' }}>
@@ -1237,6 +1241,7 @@ function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onD
                   <button onClick={() => toggleDealerOrigin(d.name)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
                     <Badge color={LOCATIONS[d.origin].color} bg="transparent" border={LOCATIONS[d.origin].color}>{d.origin}</Badge>
                   </button>
+                  <button onClick={() => onSetLogin(d.name)} title="Set portal login" style={{ background: '#F3EFE6', border: '1px solid #DCD2B8', color: '#8A6D1F', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><KeyRound size={11} /></button>
                   <button onClick={() => { setEditingName(d.name); setRenameValue(d.name); }} style={{ background: '#EAF0F4', border: '1px solid #C7D6DE', color: '#33546E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><Edit3 size={11} /></button>
                   <button onClick={() => setConfirmDeleteName(d.name)} style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><X size={11} /></button>
                 </span>
@@ -2110,6 +2115,99 @@ function OrdersImportModal({ onClose, onApply }) {
         width: '100%', background: preview ? '#E8592A' : '#DCD9CE', color: 'white', border: 'none', borderRadius: 8,
         padding: '9px', fontSize: 13.5, fontWeight: 700
       }}>Replace orders with this file</button>
+    </ModalShell>
+  );
+}
+
+function DealerLoginModal({ dealerName, onClose }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [existing, setExisting] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/dealer-auth', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'list' }),
+        });
+        const data = await res.json();
+        const found = (data.accounts || []).find(a => a.dealerName === dealerName);
+        if (found) { setExisting(found.username); setUsername(found.username); }
+      } catch (e) {
+        // Likely running outside the deployed site (e.g. the Claude preview) — fine, just no data to show.
+      }
+      setLoading(false);
+    })();
+  }, [dealerName]);
+
+  async function save() {
+    if (!username.trim() || !password) { setError('Username and password are required.'); return; }
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const res = await fetch('/api/dealer-auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-credentials', dealerName, username: username.trim(), password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not save.');
+      setSuccess('Login saved.');
+      setExisting(username.trim());
+      setPassword('');
+    } catch (e) {
+      setError(e.message || 'Could not reach the server — this only works on the live deployed site.');
+    }
+    setSaving(false);
+  }
+
+  async function remove() {
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const res = await fetch('/api/dealer-auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove-credentials', dealerName }),
+      });
+      if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Could not remove.'); }
+      setExisting(null); setUsername(''); setPassword('');
+      setSuccess('Login removed.');
+    } catch (e) {
+      setError(e.message || 'Could not reach the server.');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <ModalShell title="Dealer portal login" onClose={onClose} width={380}>
+      <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>
+        Set a username and password so <strong>{dealerName}</strong> can log into the dealer portal to place orders and see their own order history — nothing else.
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12.5, color: '#8A8F97' }}>Checking current status…</div>
+      ) : (
+        <>
+          {existing && <div style={{ fontSize: 12, color: '#3E7B4F', marginBottom: 10 }}>Currently has a login: <strong>{existing}</strong></div>}
+          <label style={labelStyle()}>Username</label>
+          <input value={username} onChange={e => setUsername(e.target.value)} style={fieldStyle()} />
+          <label style={labelStyle()}>{existing ? 'New password' : 'Password'}</label>
+          <input value={password} onChange={e => setPassword(e.target.value)} style={fieldStyle()} placeholder={existing ? 'Enter a new password to reset it' : ''} />
+          {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+          {success && <div style={{ color: '#3E7B4F', fontSize: 12.5, marginBottom: 10 }}>{success}</div>}
+          <button disabled={saving} onClick={save} style={{
+            width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
+            padding: '9px', fontSize: 13.5, fontWeight: 700, marginBottom: existing ? 8 : 0
+          }}>{saving ? 'Saving…' : existing ? 'Update login' : 'Create login'}</button>
+          {existing && (
+            <button disabled={saving} onClick={remove} style={{
+              width: '100%', background: 'white', border: '1px solid #F0C4B8', color: '#B23A2E',
+              borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 700
+            }}>Remove login</button>
+          )}
+        </>
+      )}
     </ModalShell>
   );
 }
