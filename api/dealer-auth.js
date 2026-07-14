@@ -104,6 +104,37 @@ export default async function handler(req, res) {
         if (acc.dealerName === dealerName) delete accounts[u];
       }
       await redis.set(ACCOUNTS_KEY, accounts);
+
+      // Kick out anyone currently logged in as this dealer, not just block future logins.
+      const sessions = (await redis.get(SESSIONS_KEY)) || {};
+      let changed = false;
+      for (const [tok, session] of Object.entries(sessions)) {
+        if (session.dealerName === dealerName) { delete sessions[tok]; changed = true; }
+      }
+      if (changed) await redis.set(SESSIONS_KEY, sessions);
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // --- Admin: keep a dealer's portal login working after a rename in the main app ---
+    if (action === 'rename-dealer') {
+      const { oldName, newName } = req.body;
+      if (!oldName || !newName) return res.status(400).json({ error: 'oldName and newName are required.' });
+
+      const accounts = (await redis.get(ACCOUNTS_KEY)) || {};
+      let accChanged = false;
+      for (const acc of Object.values(accounts)) {
+        if (acc.dealerName === oldName) { acc.dealerName = newName; accChanged = true; }
+      }
+      if (accChanged) await redis.set(ACCOUNTS_KEY, accounts);
+
+      const sessions = (await redis.get(SESSIONS_KEY)) || {};
+      let sessChanged = false;
+      for (const session of Object.values(sessions)) {
+        if (session.dealerName === oldName) { session.dealerName = newName; sessChanged = true; }
+      }
+      if (sessChanged) await redis.set(SESSIONS_KEY, sessions);
+
       return res.status(200).json({ ok: true });
     }
 
