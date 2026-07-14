@@ -18,6 +18,10 @@ const redis = url && token ? new Redis({ url, token }) : null;
 const NS = 'gr-bumpers:';
 
 export default async function handler(req, res) {
+  // Belt-and-suspenders: prevent any browser/CDN layer from caching this response,
+  // since these values change frequently and every client needs the live data.
+  res.setHeader('Cache-Control', 'no-store, must-revalidate');
+
   if (!redis) {
     return res.status(500).json({
       error: 'Redis credentials not found. Check that UPSTASH_REDIS_REST_URL/TOKEN ' +

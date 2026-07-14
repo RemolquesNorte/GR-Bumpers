@@ -27,6 +27,7 @@ function makeToken() {
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store, must-revalidate');
   if (!redis) {
     return res.status(500).json({ error: 'Redis credentials not configured.' });
   }

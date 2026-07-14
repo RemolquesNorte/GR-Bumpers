@@ -12,7 +12,7 @@ function td() { return { padding: '8px 10px', fontSize: 13, verticalAlign: 'midd
 
 async function api(action, body) {
   const res = await fetch('/api/dealer-auth', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...body }),
   });
   const data = await res.json();
@@ -139,7 +139,7 @@ function PortalHome({ dealerName, token, onLogout }) {
   }
 
   async function loadOrders() {
-    const res = await fetch(`/api/dealer-orders?token=${encodeURIComponent(token)}`);
+    const res = await fetch(`/api/dealer-orders?token=${encodeURIComponent(token)}&_=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     if (res.ok) setOrders(data.orders);
   }
@@ -148,10 +148,17 @@ function PortalHome({ dealerName, token, onLogout }) {
     (async () => {
       await Promise.all([
         loadOrders(),
-        fetch('/api/dealer-models').then(r => r.json()).then(d => setModels(d.skus || [])),
+        fetch('/api/dealer-models', { cache: 'no-store' }).then(r => r.json()).then(d => setModels(d.skus || [])),
       ]);
       setLoading(false);
     })();
+  }, []);
+
+  // Quietly re-check for updates (e.g. staff confirming or shipping an order)
+  // every few seconds, so the dealer doesn't have to refresh the page.
+  useEffect(() => {
+    const interval = setInterval(loadOrders, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -168,7 +175,7 @@ function PortalHome({ dealerName, token, onLogout }) {
     setSubmitting(true);
     try {
       const res = await fetch('/api/dealer-orders', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, po, items: validLines }),
       });
       const data = await res.json();

@@ -8,7 +8,7 @@ const API = '/api/storage';
 
 export async function storageGet(key) {
   try {
-    const res = await fetch(`${API}?key=${encodeURIComponent(key)}`);
+    const res = await fetch(`${API}?key=${encodeURIComponent(key)}&_=${Date.now()}`, { cache: 'no-store' });
     if (res.status === 404) return null;
     if (!res.ok) return null;
     const data = await res.json();
@@ -23,6 +23,7 @@ export async function storageSet(key, value) {
   try {
     const res = await fetch(API, {
       method: 'POST',
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value }),
     });

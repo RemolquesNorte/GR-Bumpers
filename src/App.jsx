@@ -38,11 +38,42 @@ function toNum(v) {
 // in cols 6-14). Mirrors the structure of the original Orders.xlsx export.
 function parseOrdersRows(rows) {
   const out = [];
+
+  // Find the header row (contains "Num", "P.O.#", "Type", etc.) and map each
+  // column by its label, instead of assuming a fixed position. This way the
+  // parser keeps working correctly even if a future export shifts columns
+  // around — it always finds "Num" and "P.O.#" wherever they actually are.
+  let headerRowIndex = -1;
+  let col = { type: 6, date: 7, due: 8, num: 9, po: 10, name: 11, qty: 12, invoiced: 13, backordered: 14 };
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+    const numIdx = row.findIndex(c => typeof c === 'string' && c.trim() === 'Num');
+    if (numIdx !== -1) {
+      headerRowIndex = i;
+      const map = {};
+      row.forEach((cell, ci) => { if (typeof cell === 'string' && cell.trim()) map[cell.trim()] = ci; });
+      col = {
+        type: map['Type'] ?? col.type,
+        date: map['Date'] ?? col.date,
+        due: map['Due Date'] ?? col.due,
+        num: map['Num'] ?? col.num,
+        po: map['P.O.#'] ?? col.po,
+        name: map['Name'] ?? col.name,
+        qty: map['Qty'] ?? col.qty,
+        invoiced: map['Invoiced'] ?? col.invoiced,
+        backordered: map['Backordered'] ?? col.backordered,
+      };
+      break;
+    }
+  }
+  const startRow = headerRowIndex >= 0 ? headerRowIndex + 1 : 3;
+
   let currentSku = null;
   rows.forEach((row, i) => {
-    if (i < 3 || !Array.isArray(row)) return;
+    if (i < startRow || !Array.isArray(row)) return;
     const skuCell = row[4];
-    const typeCell = row[6];
+    const typeCell = row[col.type];
     const hasType = typeCell != null && String(typeCell).trim() !== '';
     if (skuCell != null && String(skuCell).trim() !== '' && !hasType) {
       const s = String(skuCell).trim();
@@ -51,14 +82,16 @@ function parseOrdersRows(rows) {
     } else if (hasType && currentSku) {
       out.push({
         sku: currentSku,
-        date: formatDateCell(row[7]),
-        due: formatDateCell(row[8]),
-        num: row[10] != null ? String(row[10]) : '',
-        po: row[9] != null ? String(row[9]) : '',
-        dealer: row[11] != null ? String(row[11]).trim() : '',
-        qty: toNum(row[12]),
-        invoiced: toNum(row[13]),
-        backordered: toNum(row[14]),
+        date: formatDateCell(row[col.date]),
+        due: formatDateCell(row[col.due]),
+        // "Num" is the real reference number dealers use — that's what we show as PO.
+        // "P.O.#" is kept in the num field only for reference; it's almost always blank.
+        num: row[col.po] != null ? String(row[col.po]) : '',
+        po: row[col.num] != null ? String(row[col.num]) : '',
+        dealer: row[col.name] != null ? String(row[col.name]).trim() : '',
+        qty: toNum(row[col.qty]),
+        invoiced: toNum(row[col.invoiced]),
+        backordered: toNum(row[col.backordered]),
       });
     }
   });
@@ -316,6 +349,34 @@ export default function App() {
       setLoading(false);
     })();
   }, []);
+
+  // Keep the app in sync with what everyone else is doing, without needing a manual
+  // refresh — quietly re-check the shared data every few seconds and update state if
+  // it changed. This never touches the one-time seed/migration logic above.
+  useEffect(() => {
+    if (loading) return;
+    const interval = setInterval(async () => {
+      const [inv, tb, dl, ord, sales, batches, prodLog, incoming] = await Promise.all([
+        storageGet('bumper-inventory', true),
+        storageGet('bumper-toolbox', true),
+        storageGet('bumper-dealers', true),
+        storageGet('bumper-orders', true),
+        storageGet('bumper-sales', true),
+        storageGet('bumper-production-batches', true),
+        storageGet('bumper-production-log', true),
+        storageGet('bumper-new-orders', true),
+      ]);
+      if (inv) setInventory(inv);
+      if (tb) setToolboxItems(tb);
+      if (dl) setDealers(dl);
+      if (ord) setOrders(ord);
+      if (sales) setSalesLog(sales);
+      if (batches) setProductionBatches(batches);
+      if (prodLog) setProductionLog(prodLog);
+      if (incoming) setNewOrders(incoming);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const showToast = useCallback((msg) => setToast(msg), []);
 
@@ -2276,7 +2337,7 @@ function DealerLoginModal({ dealerName, onClose }) {
     (async () => {
       try {
         const res = await fetch('/api/dealer-auth', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'list' }),
         });
         const data = await res.json();
@@ -2294,7 +2355,7 @@ function DealerLoginModal({ dealerName, onClose }) {
     setSaving(true); setError(''); setSuccess('');
     try {
       const res = await fetch('/api/dealer-auth', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set-credentials', dealerName, username: username.trim(), password }),
       });
       const data = await res.json();
@@ -2312,7 +2373,7 @@ function DealerLoginModal({ dealerName, onClose }) {
     setSaving(true); setError(''); setSuccess('');
     try {
       const res = await fetch('/api/dealer-auth', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'remove-credentials', dealerName }),
       });
       if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Could not remove.'); }
