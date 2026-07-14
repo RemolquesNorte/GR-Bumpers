@@ -614,11 +614,23 @@ export default function App() {
     persistDealers(nextDealers);
     const nextOrders = orders.map(o => normName(o.dealer) === normName(oldName) ? { ...o, dealer: newName } : o);
     persistOrders(nextOrders);
+    // Keep their portal login (and any active session) pointed at the new name — best effort,
+    // only works on the deployed site, silently does nothing in the Claude preview.
+    fetch('/api/dealer-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rename-dealer', oldName, newName }),
+    }).catch(() => {});
     showToast(`Renamed dealer to ${newName}`);
   }
 
   function deleteDealer(name) {
     persistDealers(dealers.filter(d => d.name !== name));
+    // Revoke their portal login and log them out of any active session — best effort,
+    // only works on the deployed site, silently does nothing in the Claude preview.
+    fetch('/api/dealer-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove-credentials', dealerName: name }),
+    }).catch(() => {});
     showToast(`Removed dealer ${name}`);
   }
 

@@ -139,6 +139,7 @@ function PortalHome({ dealerName, token, onLogout }) {
 
   async function loadOrders() {
     const res = await fetch(`/api/dealer-orders?token=${encodeURIComponent(token)}&_=${Date.now()}`, { cache: 'no-store' });
+    if (res.status === 401) { onLogout(); return; }
     const data = await res.json();
     if (res.ok) setOrders(data.orders);
   }
