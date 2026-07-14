@@ -572,13 +572,13 @@ export default function App() {
     await storageSet('bumper-new-orders', next, true);
   }
 
-  function processNewOrders(ids) {
+  function processNewOrders(ids, po) {
     const idSet = new Set(ids);
-    const toProcess = newOrders.filter(o => idSet.has(o.id));
+    const toProcess = newOrders.filter(o => idSet.has(o.id)).map(o => ({ ...o, po: po || o.po }));
     if (toProcess.length === 0) return;
     persistNewOrders(newOrders.filter(o => !idSet.has(o.id)));
     persistOrders([...toProcess, ...orders]);
-    showToast(`Processed ${toProcess.length} order line${toProcess.length === 1 ? '' : 's'} for ${toProcess[0].dealer}`);
+    showToast(`Processed ${toProcess.length} order line${toProcess.length === 1 ? '' : 's'} for ${toProcess[0].dealer} — PO ${po}`);
   }
 
   function rejectNewOrders(ids) {
@@ -1900,6 +1900,8 @@ function ResetDataView({ onReset }) {
 }
 
 function NewOrdersView({ newOrders, onProcess, onReject }) {
+  const [poDrafts, setPoDrafts] = useState({});
+
   const groups = useMemo(() => {
     const map = {};
     newOrders.forEach(o => {
@@ -1914,7 +1916,7 @@ function NewOrdersView({ newOrders, onProcess, onReject }) {
     <div>
       <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>New Orders</div>
       <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 12 }}>
-        Orders dealers placed through the portal, waiting for you to capture them. Nothing here shows up anywhere else — Orders, Bumper Lookup, Production Planning — until you process it.
+        Orders dealers placed through the portal, waiting for you to capture them. Nothing here shows up anywhere else — Orders, Bumper Lookup, Production Planning — until you process it. A PO number is required before you can process one.
       </div>
 
       {groups.length === 0 ? (
@@ -1924,36 +1926,53 @@ function NewOrdersView({ newOrders, onProcess, onReject }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {groups.map(g => (
-            <div key={g.key} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-                <div>
-                  <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 14, textTransform: 'uppercase' }}>{g.dealer}</div>
-                  <div style={{ fontSize: 11.5, color: '#8A8F97' }}>
-                    {g.date || '—'}{g.po ? ` · PO ${g.po}` : ''} · {g.items.length} model{g.items.length === 1 ? '' : 's'}
+          {groups.map(g => {
+            const poValue = poDrafts[g.key] ?? (g.po || '');
+            const canProcess = poValue.trim().length > 0;
+            return (
+              <div key={g.key} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 14, textTransform: 'uppercase' }}>{g.dealer}</div>
+                    <div style={{ fontSize: 11.5, color: '#8A8F97' }}>
+                      {g.date || '—'} · {g.items.length} model{g.items.length === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      value={poValue}
+                      onChange={e => setPoDrafts(d => ({ ...d, [g.key]: e.target.value }))}
+                      placeholder="PO # (required)"
+                      style={{
+                        padding: '6px 9px', borderRadius: 6, border: `1px solid ${canProcess ? '#DCD9CE' : '#E8B4A8'}`,
+                        fontSize: 12.5, width: 140
+                      }}
+                    />
+                    <button onClick={() => onReject(g.items.map(o => o.id))} style={{
+                      fontSize: 12, fontWeight: 700, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8',
+                      borderRadius: 6, padding: '6px 10px'
+                    }}>Reject</button>
+                    <button
+                      disabled={!canProcess}
+                      onClick={() => onProcess(g.items.map(o => o.id), poValue.trim())}
+                      title={canProcess ? '' : 'Enter a PO number first'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'white',
+                        background: canProcess ? '#E8592A' : '#DCD9CE', border: 'none', borderRadius: 6, padding: '6px 12px'
+                      }}><Check size={12} /> Process order</button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => onReject(g.items.map(o => o.id))} style={{
-                    fontSize: 12, fontWeight: 700, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8',
-                    borderRadius: 6, padding: '6px 10px'
-                  }}>Reject</button>
-                  <button onClick={() => onProcess(g.items.map(o => o.id))} style={{
-                    display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'white',
-                    background: '#E8592A', border: 'none', borderRadius: 6, padding: '6px 12px'
-                  }}><Check size={12} /> Process order</button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {g.items.map(o => (
+                    <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F7F5EF', border: '1px solid #EFEDE4', borderRadius: 7, padding: '4px 8px' }}>
+                      <SkuTag sku={o.sku} />
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 12.5, color: '#5B6470' }}>× {o.qty}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {g.items.map(o => (
-                  <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F7F5EF', border: '1px solid #EFEDE4', borderRadius: 7, padding: '4px 8px' }}>
-                    <SkuTag sku={o.sku} />
-                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, fontSize: 12.5, color: '#5B6470' }}>× {o.qty}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

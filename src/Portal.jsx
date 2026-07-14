@@ -123,7 +123,6 @@ function PortalHome({ dealerName, token, onLogout }) {
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lines, setLines] = useState([{ sku: '', qty: '' }]);
-  const [po, setPo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -176,11 +175,11 @@ function PortalHome({ dealerName, token, onLogout }) {
     try {
       const res = await fetch('/api/dealer-orders', {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, po, items: validLines }),
+        body: JSON.stringify({ token, items: validLines }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not place order.');
-      setLines([{ sku: '', qty: '' }]); setPo('');
+      setLines([{ sku: '', qty: '' }]);
       setToast(validLines.length > 1 ? `Order request sent — ${validLines.length} models, pending confirmation` : 'Order request sent — pending confirmation');
       await loadOrders();
     } catch (err) {
@@ -219,9 +218,6 @@ function PortalHome({ dealerName, token, onLogout }) {
         </div>
         <div style={{ fontSize: 11.5, color: '#8A8F97', marginBottom: 14 }}>Your order request will show as "Pending confirmation" until we confirm it on our end.</div>
         <form onSubmit={submitOrder}>
-          <label style={labelStyle()}>PO # (optional, applies to the whole order)</label>
-          <input value={po} onChange={e => setPo(e.target.value)} style={fieldStyle()} />
-
           <label style={labelStyle()}>Models</label>
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
