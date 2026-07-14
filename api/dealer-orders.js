@@ -45,7 +45,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { token: sessionToken, po, items } = req.body || {};
+      const { token: sessionToken, items } = req.body || {};
       const dealerName = await dealerForToken(sessionToken);
       if (!dealerName) return res.status(401).json({ error: 'Not logged in.' });
 
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
       const dateStr = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
       const newOrders = cleanLines.map((l, i) => ({
         id: 'D' + Date.now() + '_' + i, sku: l.sku, dealer: dealerName, date: dateStr, due: '', num: '',
-        po: po || '', qty: l.qty, invoiced: 0, backordered: l.qty,
+        po: '', qty: l.qty, invoiced: 0, backordered: l.qty,
       }));
       await redis.set(PENDING_KEY, [...newOrders, ...allPending]);
       return res.status(200).json({ ok: true, orders: newOrders, pending: true });
