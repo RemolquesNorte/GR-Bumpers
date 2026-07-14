@@ -350,6 +350,34 @@ export default function App() {
     })();
   }, []);
 
+  // Keep the app in sync with what everyone else is doing, without needing a manual
+  // refresh — quietly re-check the shared data every few seconds and update state if
+  // it changed. This never touches the one-time seed/migration logic above.
+  useEffect(() => {
+    if (loading) return;
+    const interval = setInterval(async () => {
+      const [inv, tb, dl, ord, sales, batches, prodLog, incoming] = await Promise.all([
+        storageGet('bumper-inventory', true),
+        storageGet('bumper-toolbox', true),
+        storageGet('bumper-dealers', true),
+        storageGet('bumper-orders', true),
+        storageGet('bumper-sales', true),
+        storageGet('bumper-production-batches', true),
+        storageGet('bumper-production-log', true),
+        storageGet('bumper-new-orders', true),
+      ]);
+      if (inv) setInventory(inv);
+      if (tb) setToolboxItems(tb);
+      if (dl) setDealers(dl);
+      if (ord) setOrders(ord);
+      if (sales) setSalesLog(sales);
+      if (batches) setProductionBatches(batches);
+      if (prodLog) setProductionLog(prodLog);
+      if (incoming) setNewOrders(incoming);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   const showToast = useCallback((msg) => setToast(msg), []);
 
   const dealerOriginMap = useMemo(() => {
