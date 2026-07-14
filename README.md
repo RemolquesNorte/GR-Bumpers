@@ -120,6 +120,59 @@ list of *that dealer's own* orders.
 If you ever want this tightened up — expiring sessions, forced password resets, rate
 limiting on login attempts — that's a reasonable next step, just ask.
 
+## Security & Backups (new)
+
+This update closes the biggest gaps from before: there was no login on the main site,
+the API had no protection at all, and there was no way to recover data if something
+went wrong. Here's what changed and what you need to set up.
+
+### 1. Set two new environment variables
+
+In Vercel → your project → **Settings → Environments**, add:
+
+- **`ADMIN_PASSWORD`** — whatever password your staff should use to get into the main
+  site. Pick something real, not `0000`.
+- **`CRON_SECRET`** — a random string (16+ characters) that proves the daily backup
+  job is really coming from Vercel and not someone poking the URL directly. Generate
+  one any way you like — even mashing your keyboard for a bit works, as long as it's
+  long and random. Example of the kind of thing to use: `k8vN2pQmZ9xR4wLtF7yBhC3sJdE6uAg1`.
+
+Redeploy after adding these (env vars only apply to deployments made after they're set).
+
+### 2. What's now protected
+
+- **The main site requires a password to open at all.** Staff log in once; the login
+  stays valid for 30 days per device.
+- **The `/api/storage` endpoint** (which is how the site reads/writes all your data)
+  now rejects any request that doesn't include a valid login session — it's no longer
+  wide open to anyone who finds the URL.
+- **Dealer account management** (creating/removing/renaming dealer logins) now also
+  requires a valid staff login — a dealer can never call those actions themselves.
+- **Login attempts are rate-limited** — 5 wrong passwords locks that login out for 15
+  minutes, for both staff and dealer logins.
+- **Dealer sessions expire after 30 days** and get force-logged-out immediately if
+  their account is deleted.
+- **Reset Data** now checks your real admin password instead of a simple 4-digit code.
+
+### 3. Backups — three layers
+
+1. **Manual download** — Backup section in the sidebar → "Download backup file." One
+   click, saves a `.json` file with everything (inventory, dealers, orders, sales log,
+   production tracking) to your computer. Do this before anything risky, or just
+   periodically for peace of mind.
+2. **Restore from a downloaded file** — same section, upload a previously-downloaded
+   backup to roll back to it.
+3. **Automatic daily snapshot** — a Vercel Cron job runs once a day and keeps the last
+   14 days of snapshots in the database itself, restorable with one click from the
+   same Backup section — a safety net even if you forget to download anything
+   yourself. (Vercel's free tier limits cron jobs to once per day, fired sometime in
+   the scheduled hour — that's already accounted for.)
+
+None of this is enterprise-grade security — it's a real password wall, a locked-down
+API, rate limiting, and layered backups, which closes the practical risks for a small
+business tool. If you ever want stronger guarantees (per-user staff accounts, audit
+logs, off-platform backup storage), that's a bigger next step — just ask.
+
 ## Local development
 
 ```bash

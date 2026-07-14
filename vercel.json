@@ -1,5 +1,8 @@
 {
   "rewrites": [
     { "source": "/portal", "destination": "/portal.html" }
+  ],
+  "crons": [
+    { "path": "/api/backup-cron", "schedule": "0 8 * * *" }
   ]
 }

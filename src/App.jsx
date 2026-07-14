@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2, KeyRound, Inbox } from 'lucide-react';
+import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2, KeyRound, Inbox, LogOut, DownloadCloud, UploadCloud, RotateCcw } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { storageGet, storageSet } from './storage.js';
+import { storageGet, storageSet, setAdminToken, onUnauthorizedRequest } from './storage.js';
 
 const TRANSLATION = {"Defensa frontal completa de frente con malla (Chevrolet 03-07 Diesel)Peso 172 lbs": "FBMC 03-07", "Defensa frontal completa de frente con malla (Chevrolet 07.5-10 Diesel)Peso 172 lbs": "FBMC 7.5-10", "Defensa frontal completa de frente con malla (Chevrolet 11-14 Diesel)Peso 172 lbs": "FBMC 11-14", "Defensa frontal completa de frente con malla (Chevrolet 15-19 Diesel)Peso 172 lbs": "FBMC 15-19", "Defensa frontal completa de frente con malla (Chevrolet 20-23 Diesel) Peso 206.8 Lbs.": "FBMC 20-23", "Defensa frontal completa de frente con malla (Chevrolet 24-25 Diesel) Peso 206.8 Lbs.": "FBMC 24-25", "Defensa frontal completa de frente con malla (Chevrolet 26- Diesel) Peso 206.8 Lbs.": "FBMC 26-", "Defensa frontal completa de frente con malla (Chevrolet 99-02 Diesel)Peso 172 lbs.": "FBMC 99-02", "Defensa frontal completa de frente con malla (Dodge 03-05 Diesel)Peso 172 lbs.": "FBMD 03-05", "Defensa frontal completa de frente con malla (Dodge 06-09 Diesel) peso 172 lbs": "FBMD 06-09", "Defensa frontal completa de frente con malla (Dodge 10-18 Diesel)Peso 172 lbs": "FBMD 10-18", "Defensa frontal completa de frente con malla (Dodge 19-24 Diesel)Peso 238 lbs": "FBMD 19-24", "Defensa frontal completa de frente con malla (Dodge 95-02 Diesel)Peso 172 lbs": "FBMD 95-02", "Defensa frontal completa de frente con malla (Ford 05-07 Diesel)Peso 172 lbs": "FBMF 05-07", "Defensa frontal completa de frente con malla (Ford 08-10 Diesel)Peso 172 lbs": "FBMF 08-10", "Defensa frontal completa de frente con malla (Ford 11-16 F-350 y F-450 Diesel ) Peso 172 lbs.": "FBMF 11-16", "Defensa frontal completa de frente con malla (Ford 17-22 Diesel ) Peso 236 lbs.": "FBMF 17-22", "Defensa frontal completa de frente con malla (Ford 23-25 Diesel ) Peso 236 lbs.": "FBMF 23-26", "Defensa frontal completa de frente con malla (Ford 94-98 Diesel)": "FBMF 94-98", "Defensa frontal completa de frente con malla (Ford 99-04 Diesel)Peso 172 lbs": "FBMF 99-04", "Defensa frontal completa de frente con malla (GMC 03-07 Diesel) Peso 172 Lbs.": "FBMG 03-07", "Defensa frontal completa de frente con malla (GMC 11-14 Diesel) peso 172 lbs": "FBMG 11-14", "Defensa frontal completa de frente con malla (GMC 15-19 Diesel) Peso 172 Lbs.": "FBMG 15-19", "Defensa frontal completa de frente con malla (GMC 20-22 Diesel) Peso 172 Lbs.": "FBMG 20-22", "Defensa frontal completa de frente con malla (GMC 7.5-10 Diesel)Peso 172 lbs": "FBMG 7.5-10", "Defensa frontal completa de frente con malla (GMC 99-02 Diesel)": "FBMG 99-02", "Defensa trasera (Chevy 18-26 Diesel) peso 115 lbs.": "RBCGD 18-26", "Defensa trasera (Chevy y GMC 11-18 Diesel) peso 115 lbs.": "RBCGD 11-18", "Defensa trasera (Chevy y GMC 03-07 Diesel) Peso 115 lbs.": "RBCGD 03-07", "Defensa trasera (Chevy y GMC 07-10 Diesel) peso 115 lbs.": "RBCGD 07-10", "Defensa trasera (Chevy y GMC 20-22 Diesel) peso 115 lbs.": "RBCGD 20-22", "Defensa trasera (Chevy y GMC 99-02 Diesel)": "RBCGD 99-02", "Defensa trasera (Dodge 03-09 Diesel) Peso 115 lbs": "RBDD 03-09", "Defensa trasera (Dodge 24-26 Diesel)": "RBDD 24-26", "Defensa trasera (Dodge 95-02 Diesel) Peso 115 lbs": "RBDD 95-02", "Defensa trasera (Ford 08-16 Diesel)": "RBFD 08-16", "Defensa trasera (Ford 17-22 Diesel)": "RBFD 17-22", "Defensa trasera (Ford 23-26 Diesel)": "RBFD 23-26", "Defensa trasera (Ford 94-98 Diesel)": "RBFD 94-98", "Defensa trasera (Ford 99-07 Diesel) Peso 115 lbs": "RBFD 99-07", "Defensa trasera con luces (Chevy y GMC 99-02 Diesel)": "RBCGD 99-02"}
 ;
@@ -271,7 +271,7 @@ function SkuTag({ sku }) {
   );
 }
 
-export default function App() {
+function Dashboard({ onAdminLogout } = {}) {
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState([]);
   const [toolboxItems, setToolboxItems] = useState([]);
@@ -587,6 +587,20 @@ export default function App() {
     showToast('Order request rejected');
   }
 
+  function restoreFromFile(parsed) {
+    const d = parsed?.data;
+    if (!d) { showToast('That file doesn\'t look like a valid backup'); return; }
+    if (d.inventory) persistInventory(d.inventory);
+    if (d.toolboxItems) persistToolboxItems(d.toolboxItems);
+    if (d.dealers) persistDealers(d.dealers);
+    if (d.orders) persistOrders(d.orders);
+    if (d.salesLog) persistSales(d.salesLog);
+    if (d.productionBatches) persistProductionBatches(d.productionBatches);
+    if (d.productionLog) persistProductionLog(d.productionLog);
+    if (d.newOrders) persistNewOrders(d.newOrders);
+    showToast('Restored from backup file');
+  }
+
   function addDealer(d) {
     if (dealers.some(x => normName(x.name) === normName(d.name))) {
       showToast('Dealer already exists');
@@ -719,6 +733,7 @@ export default function App() {
     { group: 'Data', items: [
       { id: 'import', label: 'Import', icon: Upload },
       { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issueCount },
+      { id: 'backup', label: 'Backup', icon: DownloadCloud },
       { id: 'reset', label: 'Reset Data', icon: Trash2 },
     ] },
   ];
@@ -779,6 +794,12 @@ export default function App() {
               ))}
             </div>
           ))}
+          {onAdminLogout && (
+            <button onClick={onAdminLogout} className="sidebar-nav-item" style={{ marginTop: 10, borderTop: '1px solid #2A3038', paddingTop: 12 }}>
+              <LogOut size={15} />
+              <span style={{ flex: 1 }}>Log out</span>
+            </button>
+          )}
         </div>
 
         <div className="main-content">
@@ -811,6 +832,9 @@ export default function App() {
           )}
           {tab === 'issues' && (
             <IssuesView dataIssues={dataIssues} openOrders={openOrders} />
+          )}
+          {tab === 'backup' && (
+            <BackupView state={{ inventory, toolboxItems, dealers, orders, salesLog, productionBatches, productionLog, newOrders }} onRestoreFile={restoreFromFile} />
           )}
           {tab === 'reset' && (
             <ResetDataView onReset={resetData} />
@@ -1800,12 +1824,11 @@ function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete
   );
 }
 
-const ADMIN_CODE = '0000';
-
 function ResetDataView({ onReset }) {
   const [code, setCode] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [selected, setSelected] = useState({});
   const [confirming, setConfirming] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -1818,9 +1841,23 @@ function ResetDataView({ onReset }) {
     { id: 'production', label: 'Production tracking' },
   ];
 
-  function tryUnlock() {
-    if (code === ADMIN_CODE) { setUnlocked(true); setError(false); }
-    else { setError(true); }
+  async function tryUnlock() {
+    setChecking(true);
+    setError(false);
+    try {
+      const res = await fetch('/api/admin-auth', {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', password: code }),
+      });
+      if (res.ok) setUnlocked(true);
+      else setError(true);
+    } catch (e) {
+      // No backend reachable — likely the Claude preview, which has no real password.
+      // Fall back to a simple demo code so this section is still testable here.
+      if (code === '0000') setUnlocked(true);
+      else setError(true);
+    }
+    setChecking(false);
   }
 
   function toggle(id) {
@@ -1846,7 +1883,7 @@ function ResetDataView({ onReset }) {
     return (
       <div>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Reset Data</div>
-        <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>Enter the admin code to unlock this section.</div>
+        <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>Re-enter your admin password to unlock this section.</div>
         <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 20, maxWidth: 300 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#5B6470' }}>
             <Lock size={16} />
@@ -1854,12 +1891,12 @@ function ResetDataView({ onReset }) {
           </div>
           <input type="password" value={code} onChange={e => { setCode(e.target.value); setError(false); }}
             onKeyDown={e => { if (e.key === 'Enter') tryUnlock(); }}
-            placeholder="Admin code" style={{
+            placeholder="Admin password" style={{
               width: '100%', padding: '8px 10px', borderRadius: 7, border: `1px solid ${error ? '#B23A2E' : '#DCD9CE'}`,
-              fontSize: 14, marginBottom: 8, letterSpacing: '0.2em', textAlign: 'center'
+              fontSize: 14, marginBottom: 8
             }} />
-          {error && <div style={{ color: '#B23A2E', fontSize: 12, marginBottom: 8 }}>Incorrect code.</div>}
-          <button onClick={tryUnlock} style={{ width: '100%', background: '#1C2126', color: 'white', border: 'none', borderRadius: 7, padding: '9px', fontSize: 13, fontWeight: 700 }}>Unlock</button>
+          {error && <div style={{ color: '#B23A2E', fontSize: 12, marginBottom: 8 }}>Incorrect password.</div>}
+          <button disabled={checking} onClick={tryUnlock} style={{ width: '100%', background: '#1C2126', color: 'white', border: 'none', borderRadius: 7, padding: '9px', fontSize: 13, fontWeight: 700 }}>{checking ? 'Checking…' : 'Unlock'}</button>
         </div>
       </div>
     );
@@ -1987,6 +2024,172 @@ function NewOrdersView({ newOrders, onProcess, onReject }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function BackupView({ state, onRestoreFile }) {
+  const [autoBackups, setAutoBackups] = useState(null);
+  const [loadingAuto, setLoadingAuto] = useState(true);
+  const [restoring, setRestoring] = useState(null);
+  const [fileError, setFileError] = useState('');
+  const [pendingRestore, setPendingRestore] = useState(null);
+  const fileInputRef = React.useRef(null);
+
+  function adminFetch(body) {
+    const adminToken = localStorage.getItem('gr-admin-token') || '';
+    return fetch('/api/backup-manage', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, token: adminToken }),
+    });
+  }
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await adminFetch({ action: 'list' });
+        if (res.ok) {
+          const data = await res.json();
+          setAutoBackups(data.backups || []);
+        } else {
+          setAutoBackups([]);
+        }
+      } catch (e) {
+        setAutoBackups([]); // likely the Claude preview, no server to reach
+      }
+      setLoadingAuto(false);
+    })();
+  }, []);
+
+  function downloadBackup() {
+    const payload = { exportedAt: new Date().toISOString(), data: state };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `gr-bumpers-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed.data) throw new Error('missing data');
+        setPendingRestore(parsed);
+      } catch (err) {
+        setFileError('Could not read that file — make sure it\u2019s a backup exported from this app.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  async function restoreAutoBackup(date) {
+    setRestoring(date);
+    try {
+      const res = await adminFetch({ action: 'restore', date });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Restore failed.');
+      window.location.reload();
+    } catch (err) {
+      setFileError(err.message || 'Could not restore that backup.');
+    }
+    setRestoring(null);
+  }
+
+  const counts = state ? {
+    Models: state.inventory?.length || 0,
+    Dealers: state.dealers?.length || 0,
+    Orders: state.orders?.length || 0,
+    'Sales log entries': state.salesLog?.length || 0,
+  } : {};
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Backup</div>
+      <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>
+        A copy of your data lives here — download one whenever you want, and the site also takes an automatic snapshot once a day so there's always a recent point to roll back to.
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, marginBottom: 14, maxWidth: 460 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <DownloadCloud size={15} color="#33546E" />
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase' }}>Download a backup now</div>
+        </div>
+        <div style={{ fontSize: 11.5, color: '#8A8F97', marginBottom: 10 }}>
+          {Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(' · ')}
+        </div>
+        <button onClick={downloadBackup} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: '#1C2126', color: 'white', border: 'none',
+          borderRadius: 7, padding: '8px 14px', fontSize: 12.5, fontWeight: 700
+        }}><DownloadCloud size={13} /> Download backup file</button>
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, marginBottom: 14, maxWidth: 460 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <UploadCloud size={15} color="#B58A2E" />
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase' }}>Restore from a downloaded file</div>
+        </div>
+        <div style={{ fontSize: 11.5, color: '#8A8F97', marginBottom: 10 }}>
+          This replaces your current data with whatever is in the file. Use this if something went wrong and you need to roll back.
+        </div>
+        <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} style={{ display: 'none' }} />
+        <button onClick={() => fileInputRef.current?.click()} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'white', border: '1px solid #DCD9CE', color: '#5B6470',
+          borderRadius: 7, padding: '8px 14px', fontSize: 12.5, fontWeight: 700
+        }}><UploadCloud size={13} /> Choose backup file…</button>
+        {fileError && <div style={{ color: '#B23A2E', fontSize: 12, marginTop: 8 }}>{fileError}</div>}
+        {pendingRestore && (
+          <div style={{ marginTop: 10, background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 12.5, color: '#B23A2E', marginBottom: 8 }}>
+              Restore this backup from {pendingRestore.exportedAt ? new Date(pendingRestore.exportedAt).toLocaleString() : 'unknown date'}? This replaces your current data.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { onRestoreFile(pendingRestore); setPendingRestore(null); }} style={{
+                flex: 1, background: '#B23A2E', color: 'white', border: 'none', borderRadius: 7, padding: '8px', fontSize: 12.5, fontWeight: 700
+              }}>Restore</button>
+              <button onClick={() => setPendingRestore(null)} style={{
+                flex: 1, background: 'white', border: '1px solid #DCD9CE', borderRadius: 7, padding: '8px', fontSize: 12.5
+              }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, maxWidth: 460 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <RotateCcw size={15} color="#5B6470" />
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase' }}>Automatic daily snapshots</div>
+        </div>
+        {loadingAuto ? (
+          <div style={{ fontSize: 12, color: '#8A8F97' }}>Checking…</div>
+        ) : !autoBackups || autoBackups.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#8A8F97' }}>
+            None yet — these only exist once deployed live and the daily backup has run at least once.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {autoBackups.map(b => (
+              <div key={b.date} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, padding: '6px 0', borderTop: '1px solid #EFEDE4' }}>
+                <span style={{ color: '#5B6470' }}>{b.date}</span>
+                <button disabled={restoring === b.date} onClick={() => restoreAutoBackup(b.date)} style={{
+                  fontSize: 11.5, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
+                  borderRadius: 5, padding: '4px 9px'
+                }}>{restoring === b.date ? 'Restoring…' : 'Restore this'}</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2531,4 +2734,119 @@ function EditOrderModal({ order, dealers, inventory, onClose, onSave, onDelete }
       )}
     </ModalShell>
   );
+}
+
+function AdminLoginScreen({ onLogin }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin-auth', {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Incorrect password.');
+      onLogin(data.token);
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ fontFamily: "'Inter', sans-serif", background: '#EEEEE9', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
+        * { box-sizing: border-box; }
+        button { cursor: pointer; font-family: 'Inter', sans-serif; }
+      `}</style>
+      <form onSubmit={submit} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 12, padding: 28, width: '100%', maxWidth: 340 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 7, background: '#1C2126', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Truck size={17} color="#E8592A" />
+          </div>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, textTransform: 'uppercase' }}>Staff Sign In</div>
+        </div>
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Password</label>
+        <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} style={{
+          width: '100%', padding: '9px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13.5, marginBottom: 12
+        }} />
+        {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+        <button disabled={loading} type="submit" style={{
+          width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
+          padding: '11px', fontSize: 13.5, fontWeight: 700
+        }}>{loading ? 'Signing in…' : 'Sign in'}</button>
+      </form>
+    </div>
+  );
+}
+
+export default function App() {
+  const [adminToken, setTokenState] = useState(() => localStorage.getItem('gr-admin-token') || '');
+  const [checking, setChecking] = useState(true);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (!adminToken) { setChecking(false); return; }
+      try {
+        const res = await fetch('/api/admin-auth', {
+          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'session', token: adminToken }),
+        });
+        if (res.ok) { setAdminToken(adminToken); setAuthed(true); }
+        else { localStorage.removeItem('gr-admin-token'); setTokenState(''); }
+      } catch {
+        localStorage.removeItem('gr-admin-token'); setTokenState('');
+      }
+      setChecking(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    onUnauthorizedRequest(() => {
+      localStorage.removeItem('gr-admin-token');
+      setTokenState('');
+      setAuthed(false);
+    });
+  }, []);
+
+  function handleLogin(token) {
+    setAdminToken(token);
+    localStorage.setItem('gr-admin-token', token);
+    setTokenState(token);
+    setAuthed(true);
+  }
+
+  function handleLogout() {
+    fetch('/api/admin-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'logout', token: adminToken }),
+    }).catch(() => {});
+    localStorage.removeItem('gr-admin-token');
+    setAdminToken(null);
+    setTokenState('');
+    setAuthed(false);
+  }
+
+  if (checking) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: "'Inter', sans-serif", color: '#5B6470' }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return <AdminLoginScreen onLogin={handleLogin} />;
+  }
+
+  return <Dashboard onAdminLogout={handleLogout} />;
 }

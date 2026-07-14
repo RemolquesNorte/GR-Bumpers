@@ -1,21 +1,9 @@
-// Vercel serverless function: GET/POST /api/storage
-// Backed by Upstash Redis. Vercel's Upstash Marketplace integration can name the
-// injected credentials one of a couple ways depending on how the database was
-// created, so we check both:
-//   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (Upstash's own naming)
-//   KV_REST_API_URL / KV_REST_API_TOKEN                  (legacy Vercel KV naming,
-//                                                          still used by some
-//                                                          Marketplace flows)
+// Vercel serverless function: GET/POST/DELETE /api/storage
+// Backed by Upstash Redis. Every request must include a valid admin session token
+// (issued by /api/admin-auth) — this is the main site's actual data, so nobody
+// should be able to read or write it without having logged in first.
 
-import { Redis } from '@upstash/redis';
-
-const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-
-const redis = url && token ? new Redis({ url, token }) : null;
-
-// Namespaced so this Redis database could safely be reused by other projects later.
-const NS = 'gr-bumpers:';
+import { redis, NS, isValidAdminToken } from '../lib/serverAuth.js';
 
 export default async function handler(req, res) {
   // Belt-and-suspenders: prevent any browser/CDN layer from caching this response,
@@ -28,6 +16,12 @@ export default async function handler(req, res) {
         '(or KV_REST_API_URL/TOKEN) are set in this Vercel project\'s Environment ' +
         'Variables, then redeploy.',
     });
+  }
+
+  const adminToken = req.method === 'GET' || req.method === 'DELETE' ? req.query.token : (req.body || {}).token;
+  const authorized = await isValidAdminToken(adminToken);
+  if (!authorized) {
+    return res.status(401).json({ error: 'Not authorized. Please log in.' });
   }
 
   try {
