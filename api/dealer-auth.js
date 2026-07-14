@@ -9,7 +9,7 @@
 //   { [token]: { username, dealerName, createdAt } }
 
 import crypto from 'crypto';
-import { redis, isValidAdminToken, checkRateLimit, recordFailedAttempt } from '../lib/serverAuth.js';
+import { redis, getAdminSession, checkRateLimit, recordFailedAttempt } from '../lib/serverAuth.js';
 
 const ACCOUNTS_KEY = 'gr-bumpers:dealer-accounts';
 const SESSIONS_KEY = 'gr-bumpers:dealer-sessions';
@@ -42,8 +42,9 @@ export default async function handler(req, res) {
   const { action } = req.body || {};
 
   if (ADMIN_ONLY_ACTIONS.has(action)) {
-    const authorized = await isValidAdminToken((req.body || {}).adminToken);
-    if (!authorized) return res.status(401).json({ error: 'Not authorized. Please log in as staff first.' });
+    const session = await getAdminSession((req.body || {}).token);
+    const canManage = session && (session.role === 'owner' || session.permissions?.manageDealerLogins);
+    if (!canManage) return res.status(401).json({ error: 'You don\'t have permission to manage dealer logins. Ask the owner to grant it in the Staff section.' });
   }
 
   try {

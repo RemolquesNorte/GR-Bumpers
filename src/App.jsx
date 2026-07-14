@@ -271,7 +271,7 @@ function SkuTag({ sku }) {
   );
 }
 
-function Dashboard({ onAdminLogout } = {}) {
+function Dashboard({ onAdminLogout, adminSession } = {}) {
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState([]);
   const [toolboxItems, setToolboxItems] = useState([]);
@@ -632,7 +632,7 @@ function Dashboard({ onAdminLogout } = {}) {
     // only works on the deployed site, silently does nothing in the Claude preview.
     fetch('/api/dealer-auth', {
       method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'rename-dealer', oldName, newName }),
+      body: JSON.stringify({ action: 'rename-dealer', oldName, newName, token: localStorage.getItem('gr-admin-token') || '' }),
     }).catch(() => {});
     showToast(`Renamed dealer to ${newName}`);
   }
@@ -643,7 +643,7 @@ function Dashboard({ onAdminLogout } = {}) {
     // only works on the deployed site, silently does nothing in the Claude preview.
     fetch('/api/dealer-auth', {
       method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'remove-credentials', dealerName: name }),
+      body: JSON.stringify({ action: 'remove-credentials', dealerName: name, token: localStorage.getItem('gr-admin-token') || '' }),
     }).catch(() => {});
     showToast(`Removed dealer ${name}`);
   }
@@ -714,6 +714,8 @@ function Dashboard({ onAdminLogout } = {}) {
   }
 
   const issueCount = dataIssues.unknownDealers.length + dataIssues.unknownSkus.length;
+  const isOwner = !adminSession || adminSession.role === 'owner';
+  const canManageDealerLogins = !adminSession || adminSession.role === 'owner' || !!adminSession.permissions?.manageDealerLogins;
 
   const NAV = [
     { group: 'Dealer requests', items: [
@@ -735,6 +737,7 @@ function Dashboard({ onAdminLogout } = {}) {
       { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issueCount },
       { id: 'backup', label: 'Backup', icon: DownloadCloud },
       { id: 'reset', label: 'Reset Data', icon: Trash2 },
+      ...(isOwner ? [{ id: 'staff', label: 'Staff', icon: Users }] : []),
     ] },
   ];
 
@@ -825,7 +828,7 @@ function Dashboard({ onAdminLogout } = {}) {
             <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
           )}
           {tab === 'dealers' && (
-            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} onSetLogin={setDealerLoginModal} />
+            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} onSetLogin={setDealerLoginModal} canManageDealerLogins={canManageDealerLogins} />
           )}
           {tab === 'import' && (
             <ImportView openImport={setImportModal} />
@@ -835,6 +838,9 @@ function Dashboard({ onAdminLogout } = {}) {
           )}
           {tab === 'backup' && (
             <BackupView state={{ inventory, toolboxItems, dealers, orders, salesLog, productionBatches, productionLog, newOrders }} onRestoreFile={restoreFromFile} />
+          )}
+          {tab === 'staff' && isOwner && (
+            <StaffView />
           )}
           {tab === 'reset' && (
             <ResetDataView onReset={resetData} />
@@ -1313,7 +1319,7 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
   );
 }
 
-function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete, onSetLogin }) {
+function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete, onSetLogin, canManageDealerLogins }) {
   const [q, setQ] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingName, setEditingName] = useState(null);
@@ -1393,7 +1399,9 @@ function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onD
                   <button onClick={() => toggleDealerOrigin(d.name)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
                     <Badge color={LOCATIONS[d.origin].color} bg="transparent" border={LOCATIONS[d.origin].color}>{d.origin}</Badge>
                   </button>
-                  <button onClick={() => onSetLogin(d.name)} title="Set portal login" style={{ background: '#F3EFE6', border: '1px solid #DCD2B8', color: '#8A6D1F', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><KeyRound size={11} /></button>
+                  {canManageDealerLogins && (
+                    <button onClick={() => onSetLogin(d.name)} title="Set portal login" style={{ background: '#F3EFE6', border: '1px solid #DCD2B8', color: '#8A6D1F', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><KeyRound size={11} /></button>
+                  )}
                   <button onClick={() => { setEditingName(d.name); setRenameValue(d.name); }} style={{ background: '#EAF0F4', border: '1px solid #C7D6DE', color: '#33546E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><Edit3 size={11} /></button>
                   <button onClick={() => setConfirmDeleteName(d.name)} style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 6px', display: 'flex', alignItems: 'center' }}><X size={11} /></button>
                 </span>
@@ -2194,6 +2202,128 @@ function BackupView({ state, onRestoreFile }) {
   );
 }
 
+function StaffView() {
+  const [staff, setStaff] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [canManage, setCanManage] = useState(false);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function adminFetch(body) {
+    const token = localStorage.getItem('gr-admin-token') || '';
+    return fetch('/api/admin-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, token }),
+    });
+  }
+
+  async function loadStaff() {
+    setLoading(true);
+    try {
+      const res = await adminFetch({ action: 'list-staff' });
+      if (res.ok) {
+        const data = await res.json();
+        setStaff(data.staff || []);
+      } else {
+        setStaff([]);
+      }
+    } catch (e) {
+      setStaff([]); // likely the Claude preview, no server to reach
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadStaff(); }, []);
+
+  async function addStaff(e) {
+    e.preventDefault();
+    setError('');
+    if (!username.trim() || !password) { setError('Username and password are required.'); return; }
+    setSaving(true);
+    try {
+      const res = await adminFetch({ action: 'create-staff', username: username.trim(), password, permissions: { manageDealerLogins: canManage } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not create staff account.');
+      setUsername(''); setPassword(''); setCanManage(false);
+      await loadStaff();
+    } catch (err) {
+      setError(err.message || 'Could not reach the server — this only works on the live deployed site.');
+    }
+    setSaving(false);
+  }
+
+  async function togglePermission(member) {
+    const next = !member.permissions?.manageDealerLogins;
+    setStaff(s => s.map(m => m.username === member.username ? { ...m, permissions: { manageDealerLogins: next } } : m));
+    try {
+      await adminFetch({ action: 'update-staff-permissions', username: member.username, permissions: { manageDealerLogins: next } });
+    } catch (e) { /* best effort */ }
+  }
+
+  async function removeStaff(username) {
+    setStaff(s => s.filter(m => m.username !== username));
+    try {
+      await adminFetch({ action: 'delete-staff', username });
+    } catch (e) { /* best effort */ }
+  }
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Staff</div>
+      <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>
+        Staff accounts can use the main site like you do, but can't manage other staff, and can only manage dealer portal logins if you turn that on below.
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, marginBottom: 14, maxWidth: 460 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase', marginBottom: 10 }}>Add a staff account</div>
+        <form onSubmit={addStaff}>
+          <label style={labelStyle()}>Username</label>
+          <input value={username} onChange={e => setUsername(e.target.value)} style={fieldStyle()} />
+          <label style={labelStyle()}>Password</label>
+          <input value={password} onChange={e => setPassword(e.target.value)} style={fieldStyle()} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={canManage} onChange={e => setCanManage(e.target.checked)} style={{ width: 15, height: 15 }} />
+            Can manage dealer portal logins
+          </label>
+          {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
+          <button disabled={saving} type="submit" style={{
+            width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
+            padding: '9px', fontSize: 13.5, fontWeight: 700
+          }}>{saving ? 'Adding…' : 'Add staff account'}</button>
+        </form>
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, maxWidth: 460 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase', marginBottom: 10 }}>Existing staff</div>
+        {loading ? (
+          <div style={{ fontSize: 12, color: '#8A8F97' }}>Loading…</div>
+        ) : !staff || staff.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#8A8F97' }}>No staff accounts yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {staff.map(m => (
+              <div key={m.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #EFEDE4', paddingTop: 8 }}>
+                <span style={{ fontSize: 13 }}>{m.username}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#5B6470', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!m.permissions?.manageDealerLogins} onChange={() => togglePermission(m)} style={{ width: 13, height: 13 }} />
+                    Manage dealer logins
+                  </label>
+                  <button onClick={() => removeStaff(m.username)} style={{
+                    background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 7px', display: 'flex', alignItems: 'center'
+                  }}><X size={11} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ModalShell({ title, onClose, children, width = 420 }) {
   return (
     <div style={{
@@ -2572,7 +2702,7 @@ function DealerLoginModal({ dealerName, onClose }) {
       try {
         const res = await fetch('/api/dealer-auth', {
           method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'list' }),
+          body: JSON.stringify({ action: 'list', token: localStorage.getItem('gr-admin-token') || '' }),
         });
         const data = await res.json();
         const found = (data.accounts || []).find(a => a.dealerName === dealerName);
@@ -2590,7 +2720,7 @@ function DealerLoginModal({ dealerName, onClose }) {
     try {
       const res = await fetch('/api/dealer-auth', {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set-credentials', dealerName, username: username.trim(), password }),
+        body: JSON.stringify({ action: 'set-credentials', dealerName, username: username.trim(), password, token: localStorage.getItem('gr-admin-token') || '' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not save.');
@@ -2608,7 +2738,7 @@ function DealerLoginModal({ dealerName, onClose }) {
     try {
       const res = await fetch('/api/dealer-auth', {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'remove-credentials', dealerName }),
+        body: JSON.stringify({ action: 'remove-credentials', dealerName, token: localStorage.getItem('gr-admin-token') || '' }),
       });
       if (!res.ok) { const data = await res.json(); throw new Error(data.error || 'Could not remove.'); }
       setExisting(null); setUsername(''); setPassword('');
@@ -2737,6 +2867,7 @@ function EditOrderModal({ order, dealers, inventory, onClose, onSave, onDelete }
 }
 
 function AdminLoginScreen({ onLogin }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2748,11 +2879,11 @@ function AdminLoginScreen({ onLogin }) {
     try {
       const res = await fetch('/api/admin-auth', {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', password }),
+        body: JSON.stringify({ action: 'login', username, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Incorrect password.');
-      onLogin(data.token);
+      onLogin(data.token, { role: data.role, username: data.username, permissions: data.permissions });
     } catch (err) {
       setError(err.message);
     }
@@ -2773,6 +2904,10 @@ function AdminLoginScreen({ onLogin }) {
           </div>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, textTransform: 'uppercase' }}>Staff Sign In</div>
         </div>
+        <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Username</label>
+        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Leave blank if you're the owner" style={{
+          width: '100%', padding: '9px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13.5, marginBottom: 12
+        }} />
         <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Password</label>
         <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} style={{
           width: '100%', padding: '9px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13.5, marginBottom: 12
@@ -2789,6 +2924,7 @@ function AdminLoginScreen({ onLogin }) {
 
 export default function App() {
   const [adminToken, setTokenState] = useState(() => localStorage.getItem('gr-admin-token') || '');
+  const [adminSession, setAdminSession] = useState(null);
   const [checking, setChecking] = useState(true);
   const [authed, setAuthed] = useState(false);
 
@@ -2800,8 +2936,14 @@ export default function App() {
           method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'session', token: adminToken }),
         });
-        if (res.ok) { setAdminToken(adminToken); setAuthed(true); }
-        else { localStorage.removeItem('gr-admin-token'); setTokenState(''); }
+        if (res.ok) {
+          const data = await res.json();
+          setAdminToken(adminToken);
+          setAdminSession({ role: data.role, username: data.username, permissions: data.permissions });
+          setAuthed(true);
+        } else {
+          localStorage.removeItem('gr-admin-token'); setTokenState('');
+        }
       } catch {
         localStorage.removeItem('gr-admin-token'); setTokenState('');
       }
@@ -2815,13 +2957,15 @@ export default function App() {
       localStorage.removeItem('gr-admin-token');
       setTokenState('');
       setAuthed(false);
+      setAdminSession(null);
     });
   }, []);
 
-  function handleLogin(token) {
+  function handleLogin(token, session) {
     setAdminToken(token);
     localStorage.setItem('gr-admin-token', token);
     setTokenState(token);
+    setAdminSession(session);
     setAuthed(true);
   }
 
@@ -2834,6 +2978,7 @@ export default function App() {
     setAdminToken(null);
     setTokenState('');
     setAuthed(false);
+    setAdminSession(null);
   }
 
   if (checking) {
@@ -2848,5 +2993,5 @@ export default function App() {
     return <AdminLoginScreen onLogin={handleLogin} />;
   }
 
-  return <Dashboard onAdminLogout={handleLogout} />;
+  return <Dashboard onAdminLogout={handleLogout} adminSession={adminSession} />;
 }
