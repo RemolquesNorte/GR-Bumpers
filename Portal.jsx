@@ -154,6 +154,13 @@ function PortalHome({ dealerName, token, onLogout }) {
     })();
   }, []);
 
+  // Quietly re-check for updates (e.g. staff confirming or shipping an order)
+  // every few seconds, so the dealer doesn't have to refresh the page.
+  useEffect(() => {
+    const interval = setInterval(loadOrders, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(''), 2500);
