@@ -2857,6 +2857,8 @@ function OrdersImportModal({ onClose, onApply }) {
 function DealerLoginModal({ dealerName, onClose }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [existing, setExisting] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2880,19 +2882,33 @@ function DealerLoginModal({ dealerName, onClose }) {
     })();
   }, [dealerName]);
 
+  function generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let pw = '';
+    for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+    setPassword(pw);
+    setShowPassword(true);
+  }
+
   async function save() {
     if (!username.trim() || !password) { setError('Username and password are required.'); return; }
+    if (existing && !confirmPassword) { setError('Enter your own password to confirm this change.'); return; }
     setSaving(true); setError(''); setSuccess('');
     try {
       const res = await fetch('/api/dealer-auth', {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set-credentials', dealerName, username: username.trim(), password, token: localStorage.getItem('gr-admin-token') || '' }),
+        body: JSON.stringify({
+          action: 'set-credentials', dealerName, username: username.trim(), password,
+          confirmPassword, token: localStorage.getItem('gr-admin-token') || '',
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not save.');
-      setSuccess('Login saved.');
+      setSuccess(`Login saved. Password: ${password} — write this down, it won't be shown again.`);
       setExisting(username.trim());
       setPassword('');
+      setConfirmPassword('');
+      setShowPassword(false);
     } catch (e) {
       setError(e.message || 'Could not reach the server — this only works on the live deployed site.');
     }
@@ -2928,7 +2944,26 @@ function DealerLoginModal({ dealerName, onClose }) {
           <label style={labelStyle()}>Username</label>
           <input value={username} onChange={e => setUsername(e.target.value)} style={fieldStyle()} />
           <label style={labelStyle()}>{existing ? 'New password' : 'Password'}</label>
-          <input value={password} onChange={e => setPassword(e.target.value)} style={fieldStyle()} placeholder={existing ? 'Enter a new password to reset it' : ''} />
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+              style={{ ...fieldStyle(), marginBottom: 0, flex: 1 }} placeholder={existing ? 'Enter a new password to reset it' : ''} />
+            <button type="button" onClick={() => setShowPassword(s => !s)} style={{
+              background: 'white', border: '1px solid #DCD9CE', borderRadius: 7, padding: '0 10px', fontSize: 11.5, color: '#5B6470', flexShrink: 0
+            }}>{showPassword ? 'Hide' : 'Show'}</button>
+          </div>
+          <button type="button" onClick={generatePassword} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+            background: '#FAFAF7', border: '1px dashed #C9C5B8', color: '#5B6470', borderRadius: 7,
+            padding: '7px 10px', fontSize: 12, fontWeight: 600, marginBottom: 14
+          }}><KeyRound size={12} /> Generate a random password</button>
+
+          {existing && (
+            <>
+              <label style={labelStyle()}>Your admin password (confirm this change)</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} style={fieldStyle()} />
+            </>
+          )}
+
           {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
           {success && <div style={{ color: '#3E7B4F', fontSize: 12.5, marginBottom: 10 }}>{success}</div>}
           <button disabled={saving} onClick={save} style={{
