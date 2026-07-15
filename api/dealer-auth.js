@@ -9,7 +9,7 @@
 //   { [token]: { username, dealerName, createdAt } }
 
 import crypto from 'crypto';
-import { redis, getAdminSession, checkRateLimit, recordFailedAttempt } from '../lib/serverAuth.js';
+import { redis, getAdminSession, verifyAdminPassword, checkRateLimit, recordFailedAttempt } from '../lib/serverAuth.js';
 
 const ACCOUNTS_KEY = 'gr-bumpers:dealer-accounts';
 const SESSIONS_KEY = 'gr-bumpers:dealer-sessions';
@@ -105,12 +105,17 @@ export default async function handler(req, res) {
 
     // --- Admin: set or reset a dealer's login ---
     if (action === 'set-credentials') {
-      const { dealerName, username, password } = req.body;
+      const { dealerName, username, password, confirmPassword, token: sessionToken } = req.body;
       if (!dealerName || !username || !password) {
         return res.status(400).json({ error: 'dealerName, username, and password are required.' });
       }
       const cleanUsername = username.trim().toLowerCase();
       const accounts = (await redis.get(ACCOUNTS_KEY)) || {};
+      const isChangingExisting = Object.values(accounts).some(acc => acc.dealerName === dealerName);
+      if (isChangingExisting) {
+        const ok = await verifyAdminPassword(sessionToken, confirmPassword);
+        if (!ok) return res.status(401).json({ error: 'Your password was incorrect.' });
+      }
       for (const [u, acc] of Object.entries(accounts)) {
         if (acc.dealerName === dealerName && u !== cleanUsername) delete accounts[u];
       }
