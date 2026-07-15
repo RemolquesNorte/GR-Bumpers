@@ -726,7 +726,16 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
 
   const issueCount = dataIssues.unknownDealers.length + dataIssues.unknownSkus.length;
   const isOwner = !adminSession || adminSession.role === 'owner';
-  const canManageDealerLogins = !adminSession || adminSession.role === 'owner' || !!adminSession.permissions?.manageDealerLogins;
+  const perms = isOwner
+    ? { manageDealerLogins: true, processNewOrders: true, createOrders: true, editOrders: true, editModelsAndDealers: true, receiveOrders: true }
+    : {
+        manageDealerLogins: !!adminSession.permissions?.manageDealerLogins,
+        processNewOrders: !!adminSession.permissions?.processNewOrders,
+        createOrders: !!adminSession.permissions?.createOrders,
+        editOrders: !!adminSession.permissions?.editOrders,
+        editModelsAndDealers: !!adminSession.permissions?.editModelsAndDealers,
+        receiveOrders: !!adminSession.permissions?.receiveOrders,
+      };
 
   const NAV = [
     { group: 'Dealer requests', items: [
@@ -819,13 +828,13 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
 
         <div className="main-content">
           {tab === 'neworders' && (
-            <NewOrdersView newOrders={newOrders} onProcess={processNewOrders} onReject={rejectNewOrders} />
+            <NewOrdersView newOrders={newOrders} onProcess={processNewOrders} onReject={rejectNewOrders} canProcess={perms.processNewOrders} />
           )}
           {tab === 'sku' && (
-            <SkuLookupView inventory={inventory} openOrders={openOrders} setShipModal={setShipModal} />
+            <SkuLookupView inventory={inventory} openOrders={openOrders} setShipModal={setShipModal} canShip={perms.receiveOrders} />
           )}
           {tab === 'dealer' && (
-            <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} setShipModal={setShipModal} />
+            <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} setShipModal={setShipModal} canShip={perms.receiveOrders} />
           )}
           {tab === 'production' && (
             <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingBySku={pendingBySku} productionBatches={productionBatches} onSaveProduction={saveProductionOrder} onUpdateBatch={updateProductionBatch} onDeleteBatch={deleteProductionBatch} />
@@ -834,16 +843,16 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
             <SoldUnitsView salesLog={salesLog} />
           )}
           {tab === 'orders' && (
-            <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} setEditOrderModal={setEditOrderModal} />
+            <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} setEditOrderModal={setEditOrderModal} canCreate={perms.createOrders} canEdit={perms.editOrders} canShip={perms.receiveOrders} />
           )}
           {tab === 'shipped' && (
             <ShippedView shippedLog={shippedLog} />
           )}
           {tab === 'models' && (
-            <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
+            <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} canEdit={perms.editModelsAndDealers} />
           )}
           {tab === 'dealers' && (
-            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} onSetLogin={setDealerLoginModal} canManageDealerLogins={canManageDealerLogins} />
+            <DealersView dealers={dealers} orders={orders} onAdd={() => setDealerModal(true)} toggleDealerOrigin={toggleDealerOrigin} onRename={renameDealer} onDelete={deleteDealer} onSetLogin={setDealerLoginModal} canManageDealerLogins={perms.manageDealerLogins} canEdit={perms.editModelsAndDealers} />
           )}
           {tab === 'import' && (
             <ImportView openImport={setImportModal} />
@@ -1141,7 +1150,7 @@ function ProductionPlanningView({ inventory, demandByLocSku, pendingBySku, produ
   );
 }
 
-function SkuLookupView({ inventory, openOrders, setShipModal }) {
+function SkuLookupView({ inventory, openOrders, setShipModal, canShip }) {
   const [selected, setSelected] = useState('');
   const options = useMemo(() => inventory.map(r => r.sku).sort(), [inventory]);
   const row = inventory.find(r => r.sku === selected);
@@ -1236,10 +1245,12 @@ function SkuLookupView({ inventory, openOrders, setShipModal }) {
                         <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700 }}>{o.backordered}</td>
                         <td style={td()}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
                         <td style={td()}>
-                          <button onClick={() => setShipModal(o)} style={{
-                            fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
-                            borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
-                          }}><ArrowRight size={11} /> Ship</button>
+                          {canShip && (
+                            <button onClick={() => setShipModal(o)} style={{
+                              fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
+                              borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
+                            }}><ArrowRight size={11} /> Ship</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1254,7 +1265,7 @@ function SkuLookupView({ inventory, openOrders, setShipModal }) {
   );
 }
 
-function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
+function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal, canCreate, canEdit, canShip }) {
   const [filter, setFilter] = useState('open');
   const [q, setQ] = useState('');
   const rows = orders
@@ -1278,10 +1289,12 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
             <option value="all">All orders</option>
           </select>
         </div>
-        <button onClick={onAdd} style={{
-          display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
-          border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 13, fontWeight: 700
-        }}><Plus size={14} /> New Order</button>
+        {canCreate && (
+          <button onClick={onAdd} style={{
+            display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
+            border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 13, fontWeight: 700
+          }}><Plus size={14} /> New Order</button>
+        )}
       </div>
 
       <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden' }}>
@@ -1312,16 +1325,18 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
                 <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: o.backordered > 0 ? '#B23A2E' : '#C9C5B8' }}>{o.backordered}</td>
                 <td style={td()}>
                   <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-start' }}>
-                    {o.backordered > 0 && (
+                    {o.backordered > 0 && canShip && (
                       <button onClick={() => setShipModal(o)} style={{
                         fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
                         borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
                       }}><ArrowRight size={11} /> Ship</button>
                     )}
-                    <button onClick={() => setEditOrderModal(o)} style={{
-                      fontSize: 11, fontWeight: 700, color: '#5B6470', background: '#F3F2EE', border: '1px solid #DCD9CE',
-                      borderRadius: 5, padding: '3px 7px', display: 'flex', alignItems: 'center'
-                    }}><Edit3 size={11} /></button>
+                    {canEdit && (
+                      <button onClick={() => setEditOrderModal(o)} style={{
+                        fontSize: 11, fontWeight: 700, color: '#5B6470', background: '#F3F2EE', border: '1px solid #DCD9CE',
+                        borderRadius: 5, padding: '3px 7px', display: 'flex', alignItems: 'center'
+                      }}><Edit3 size={11} /></button>
+                    )}
                   </span>
                 </td>
               </tr>
@@ -1336,7 +1351,7 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
   );
 }
 
-function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete, onSetLogin, canManageDealerLogins }) {
+function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onDelete, onSetLogin, canManageDealerLogins, canEdit }) {
   const [q, setQ] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingName, setEditingName] = useState(null);
@@ -1365,18 +1380,22 @@ function DealersView({ dealers, orders, onAdd, toggleDealerOrigin, onRename, onD
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 12, color: '#8A8F97' }}>{rows.length} dealers</div>
-          <button onClick={() => { setEditMode(e => !e); setEditingName(null); setConfirmDeleteName(null); }} style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: editMode ? '#1C2126' : 'white', color: editMode ? 'white' : '#1C2126',
-            border: '1px solid #1C2126', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
-          }}><Edit3 size={13} /> {editMode ? 'Done editing' : 'Edit dealers'}</button>
-          <button onClick={onAdd} style={{
-            display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
-            border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 13, fontWeight: 700
-          }}><Plus size={14} /> New Dealer</button>
+          {canEdit && (
+            <>
+              <button onClick={() => { setEditMode(e => !e); setEditingName(null); setConfirmDeleteName(null); }} style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: editMode ? '#1C2126' : 'white', color: editMode ? 'white' : '#1C2126',
+                border: '1px solid #1C2126', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
+              }}><Edit3 size={13} /> {editMode ? 'Done editing' : 'Edit dealers'}</button>
+              <button onClick={onAdd} style={{
+                display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
+                border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 13, fontWeight: 700
+              }}><Plus size={14} /> New Dealer</button>
+            </>
+          )}
         </div>
       </div>
-      {editMode && (
+      {editMode && canEdit && (
         <div style={{ fontSize: 12, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8', borderRadius: 7, padding: '8px 12px', marginBottom: 7 }}>
           Editing on — click a badge to flip shipping origin, the key icon to set a portal login, the pencil to rename, or the trash icon to delete.
         </div>
@@ -1477,7 +1496,7 @@ function IssuesView({ dataIssues, openOrders }) {
   );
 }
 
-function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku, setShipModal }) {
+function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku, setShipModal, canShip }) {
   const [selected, setSelected] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const options = useMemo(() => dealers.map(d => d.name).sort(), [dealers]);
@@ -1593,10 +1612,12 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku, setS
                         <td style={{ ...td(), textAlign: 'right', fontSize: 12.5, fontWeight: days > 30 ? 700 : 400, color: days > 30 ? '#B23A2E' : '#5B6470', userSelect: 'none' }}>{days ?? '—'}</td>
                         <td style={{ ...td(), userSelect: 'none' }}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
                         <td style={td()}>
-                          <button onClick={() => setShipModal(o)} style={{
-                            fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
-                            borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
-                          }}><ArrowRight size={11} /> Ship</button>
+                          {canShip && (
+                            <button onClick={() => setShipModal(o)} style={{
+                              fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
+                              borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
+                            }}><ArrowRight size={11} /> Ship</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1833,7 +1854,7 @@ function ShippedView({ shippedLog }) {
   );
 }
 
-function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete }) {
+function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete, canEdit }) {
   const [search, setSearch] = useState('');
   const [newSku, setNewSku] = useState('');
   const [editingSku, setEditingSku] = useState(null);
@@ -1871,15 +1892,19 @@ function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete
           {search && <ClearButton onClick={() => setSearch('')} />}
         </div>
         <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-          <input value={newSku} onChange={e => setNewSku(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submitAdd(); }}
-            placeholder="New model code (e.g. FBMC 03-07)" style={{
-              padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, width: 220
-            }} />
-          <button onClick={submitAdd} style={{
-            display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
-            border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
-          }}><Plus size={13} /> Add Model</button>
+          {canEdit && (
+            <>
+              <input value={newSku} onChange={e => setNewSku(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitAdd(); }}
+                placeholder="New model code (e.g. FBMC 03-07)" style={{
+                  padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, width: 220
+                }} />
+              <button onClick={submitAdd} style={{
+                display: 'flex', alignItems: 'center', gap: 6, background: '#E8592A', color: 'white',
+                border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 700
+              }}><Plus size={13} /> Add Model</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1927,12 +1952,12 @@ function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete
                         <button onClick={() => saveRename(r.sku)} style={{ background: '#3E7B4F', color: 'white', border: 'none', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Save</button>
                         <button onClick={() => setEditingSku(null)} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 5, padding: '3px 8px', fontSize: 11 }}>Cancel</button>
                       </span>
-                    ) : (
+                    ) : canEdit ? (
                       <span style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button onClick={() => { setEditingSku(r.sku); setRenameValue(r.sku); }} style={{ background: '#EAF0F4', border: '1px solid #C7D6DE', color: '#33546E', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}><Edit3 size={11} /> Rename</button>
                         <button onClick={() => setConfirmDeleteSku(r.sku)} style={{ background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 8px', fontSize: 11, fontWeight: 700 }}>Delete</button>
                       </span>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               );
@@ -2072,7 +2097,7 @@ function ResetDataView({ onReset }) {
   );
 }
 
-function NewOrdersView({ newOrders, onProcess, onReject }) {
+function NewOrdersView({ newOrders, onProcess, onReject, canProcess }) {
   const [poDrafts, setPoDrafts] = useState({});
 
   const groups = useMemo(() => {
@@ -2101,7 +2126,7 @@ function NewOrdersView({ newOrders, onProcess, onReject }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {groups.map(g => {
             const poValue = poDrafts[g.key] ?? (g.po || '');
-            const canProcess = poValue.trim().length > 0;
+            const poFilled = poValue.trim().length > 0;
             return (
               <div key={g.key} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
@@ -2111,30 +2136,34 @@ function NewOrdersView({ newOrders, onProcess, onReject }) {
                       {g.date || '—'} · {g.items.length} model{g.items.length === 1 ? '' : 's'}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      value={poValue}
-                      onChange={e => setPoDrafts(d => ({ ...d, [g.key]: e.target.value }))}
-                      placeholder="PO # (required)"
-                      style={{
-                        padding: '6px 9px', borderRadius: 6, border: `1px solid ${canProcess ? '#DCD9CE' : '#E8B4A8'}`,
-                        fontSize: 12.5, width: 140
-                      }}
-                    />
-                    <button onClick={() => onReject(g.items.map(o => o.id))} style={{
-                      fontSize: 12, fontWeight: 700, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8',
-                      borderRadius: 6, padding: '6px 10px'
-                    }}>Reject</button>
-                    <button
-                      disabled={!canProcess}
-                      onClick={() => onProcess(g.items.map(o => o.id), poValue.trim())}
-                      title={canProcess ? '' : 'Enter a PO number first'}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'white',
-                        background: canProcess ? '#E8592A' : '#DCD9CE', border: 'none', borderRadius: 6, padding: '6px 12px'
-                      }}><Check size={12} /> Process order</button>
+                  {canProcess ? (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        value={poValue}
+                        onChange={e => setPoDrafts(d => ({ ...d, [g.key]: e.target.value }))}
+                        placeholder="PO # (required)"
+                        style={{
+                          padding: '6px 9px', borderRadius: 6, border: `1px solid ${poFilled ? '#DCD9CE' : '#E8B4A8'}`,
+                          fontSize: 12.5, width: 140
+                        }}
+                      />
+                      <button onClick={() => onReject(g.items.map(o => o.id))} style={{
+                        fontSize: 12, fontWeight: 700, color: '#B23A2E', background: '#FCEEE8', border: '1px solid #F0C4B8',
+                        borderRadius: 6, padding: '6px 10px'
+                      }}>Reject</button>
+                      <button
+                        disabled={!poFilled}
+                        onClick={() => onProcess(g.items.map(o => o.id), poValue.trim())}
+                        title={poFilled ? '' : 'Enter a PO number first'}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'white',
+                          background: poFilled ? '#E8592A' : '#DCD9CE', border: 'none', borderRadius: 6, padding: '6px 12px'
+                        }}><Check size={12} /> Process order</button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: '#8A8F97', fontStyle: 'italic' }}>View only</span>
+                  )}
                   </div>
-                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {g.items.map(o => (
                     <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F7F5EF', border: '1px solid #EFEDE4', borderRadius: 7, padding: '4px 8px' }}>
@@ -2323,9 +2352,18 @@ function StaffView() {
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [canManage, setCanManage] = useState(false);
+  const [perms, setPerms] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const PERMISSION_FIELDS = [
+    { id: 'processNewOrders', label: 'Process new orders (dealer requests)' },
+    { id: 'createOrders', label: 'Create new orders' },
+    { id: 'editOrders', label: 'Edit orders' },
+    { id: 'editModelsAndDealers', label: 'Edit models and dealers' },
+    { id: 'receiveOrders', label: 'Receive orders (Ship button)' },
+    { id: 'manageDealerLogins', label: 'Manage dealer portal logins' },
+  ];
 
   function adminFetch(body) {
     const token = localStorage.getItem('gr-admin-token') || '';
@@ -2359,10 +2397,10 @@ function StaffView() {
     if (!username.trim() || !password) { setError('Username and password are required.'); return; }
     setSaving(true);
     try {
-      const res = await adminFetch({ action: 'create-staff', username: username.trim(), password, permissions: { manageDealerLogins: canManage } });
+      const res = await adminFetch({ action: 'create-staff', username: username.trim(), password, permissions: perms });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not create staff account.');
-      setUsername(''); setPassword(''); setCanManage(false);
+      setUsername(''); setPassword(''); setPerms({});
       await loadStaff();
     } catch (err) {
       setError(err.message || 'Could not reach the server — this only works on the live deployed site.');
@@ -2370,11 +2408,11 @@ function StaffView() {
     setSaving(false);
   }
 
-  async function togglePermission(member) {
-    const next = !member.permissions?.manageDealerLogins;
-    setStaff(s => s.map(m => m.username === member.username ? { ...m, permissions: { manageDealerLogins: next } } : m));
+  async function togglePermission(member, field) {
+    const next = { ...(member.permissions || {}), [field]: !member.permissions?.[field] };
+    setStaff(s => s.map(m => m.username === member.username ? { ...m, permissions: next } : m));
     try {
-      await adminFetch({ action: 'update-staff-permissions', username: member.username, permissions: { manageDealerLogins: next } });
+      await adminFetch({ action: 'update-staff-permissions', username: member.username, permissions: next });
     } catch (e) { /* best effort */ }
   }
 
@@ -2389,7 +2427,7 @@ function StaffView() {
     <div>
       <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Staff</div>
       <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 14 }}>
-        Staff accounts can use the main site like you do, but can't manage other staff, and can only manage dealer portal logins if you turn that on below.
+        By default a staff account can only browse — nothing checked means view-only. Turn on whichever specific abilities they need below. Only you (the owner) can see this section.
       </div>
 
       <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, marginBottom: 14, maxWidth: 460 }}>
@@ -2399,10 +2437,15 @@ function StaffView() {
           <input value={username} onChange={e => setUsername(e.target.value)} style={fieldStyle()} />
           <label style={labelStyle()}>Password</label>
           <input value={password} onChange={e => setPassword(e.target.value)} style={fieldStyle()} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14, cursor: 'pointer' }}>
-            <input type="checkbox" checked={canManage} onChange={e => setCanManage(e.target.checked)} style={{ width: 15, height: 15 }} />
-            Can manage dealer portal logins
-          </label>
+          <label style={labelStyle()}>Abilities</label>
+          <div style={{ marginBottom: 14 }}>
+            {PERMISSION_FIELDS.map(f => (
+              <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!perms[f.id]} onChange={e => setPerms(p => ({ ...p, [f.id]: e.target.checked }))} style={{ width: 15, height: 15 }} />
+                {f.label}
+              </label>
+            ))}
+          </div>
           {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
           <button disabled={saving} type="submit" style={{
             width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
@@ -2411,25 +2454,29 @@ function StaffView() {
         </form>
       </div>
 
-      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, maxWidth: 460 }}>
+      <div style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 10, padding: 16, maxWidth: 520 }}>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase', marginBottom: 10 }}>Existing staff</div>
         {loading ? (
           <div style={{ fontSize: 12, color: '#8A8F97' }}>Loading…</div>
         ) : !staff || staff.length === 0 ? (
           <div style={{ fontSize: 12, color: '#8A8F97' }}>No staff accounts yet.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {staff.map(m => (
-              <div key={m.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #EFEDE4', paddingTop: 8 }}>
-                <span style={{ fontSize: 13 }}>{m.username}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#5B6470', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!m.permissions?.manageDealerLogins} onChange={() => togglePermission(m)} style={{ width: 13, height: 13 }} />
-                    Manage dealer logins
-                  </label>
+              <div key={m.username} style={{ borderTop: '1px solid #EFEDE4', paddingTop: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{m.username}</span>
                   <button onClick={() => removeStaff(m.username)} style={{
                     background: '#FCEEE8', border: '1px solid #F0C4B8', color: '#B23A2E', borderRadius: 5, padding: '3px 7px', display: 'flex', alignItems: 'center'
                   }}><X size={11} /></button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
+                  {PERMISSION_FIELDS.map(f => (
+                    <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#5B6470', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!m.permissions?.[f.id]} onChange={() => togglePermission(m, f.id)} style={{ width: 13, height: 13 }} />
+                      {f.label}
+                    </label>
+                  ))}
                 </div>
               </div>
             ))}
