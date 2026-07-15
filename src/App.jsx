@@ -813,7 +813,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
             <SkuLookupView inventory={inventory} openOrders={openOrders} setShipModal={setShipModal} />
           )}
           {tab === 'dealer' && (
-            <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} />
+            <DealerLookupView dealers={dealers} openOrders={openOrders} inventory={inventory} ordersByLocSku={ordersByLocSku} setShipModal={setShipModal} />
           )}
           {tab === 'production' && (
             <ProductionPlanningView inventory={inventory} demandByLocSku={demandByLocSku} pendingBySku={pendingBySku} productionBatches={productionBatches} onSaveProduction={saveProductionOrder} onUpdateBatch={updateProductionBatch} onDeleteBatch={deleteProductionBatch} />
@@ -1275,6 +1275,7 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
             <tr style={{ background: '#1C2126', color: '#F5F3EE' }}>
               <th style={th()}>Model</th>
               <th style={th()}>Dealer</th>
+              <th style={th()}>PO</th>
               <th style={th()}>Ships from</th>
               <th style={th()}>Date</th>
               <th style={{ ...th(), textAlign: 'right' }}>Qty</th>
@@ -1288,6 +1289,7 @@ function OrdersView({ orders, onAdd, setShipModal, setEditOrderModal }) {
               <tr key={o.id} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
                 <td style={td()}><SkuTag sku={o.sku} />{!o.skuKnown && <AlertTriangle size={11} color="#B23A2E" style={{ marginLeft: 6, display: 'inline' }} />}</td>
                 <td style={td()}>{o.dealer}{!o.dealerKnown && <AlertTriangle size={11} color="#B23A2E" style={{ marginLeft: 6, display: 'inline' }} />}</td>
+                <td style={{ ...td(), color: '#8A8F97' }}>{o.po || '—'}</td>
                 <td style={td()}><Badge color={LOCATIONS[o.shipFrom].color} bg="transparent" border={LOCATIONS[o.shipFrom].color}>{o.shipFrom}</Badge></td>
                 <td style={{ ...td(), fontSize: 12.5, color: '#5B6470' }}>{o.date || '—'}</td>
                 <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace" }}>{o.qty}</td>
@@ -1460,7 +1462,7 @@ function IssuesView({ dataIssues, openOrders }) {
   );
 }
 
-function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
+function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku, setShipModal }) {
   const [selected, setSelected] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const options = useMemo(() => dealers.map(d => d.name).sort(), [dealers]);
@@ -1555,6 +1557,7 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
                     <th style={{ ...th(), userSelect: 'none' }}>Ships from</th>
                     <th style={{ ...th(), textAlign: 'right', userSelect: 'none' }}>Days waiting</th>
                     <th style={{ ...th(), userSelect: 'none' }}>Status</th>
+                    <th style={th()}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1574,6 +1577,12 @@ function DealerLookupView({ dealers, openOrders, inventory, ordersByLocSku }) {
                         <td style={{ ...td(), userSelect: 'none' }}><Badge color={LOCATIONS[o.shipFrom].color} bg="transparent" border={LOCATIONS[o.shipFrom].color}>{o.shipFrom}</Badge></td>
                         <td style={{ ...td(), textAlign: 'right', fontSize: 12.5, fontWeight: days > 30 ? 700 : 400, color: days > 30 ? '#B23A2E' : '#5B6470', userSelect: 'none' }}>{days ?? '—'}</td>
                         <td style={{ ...td(), userSelect: 'none' }}><Badge color={statusColor} bg="transparent" border={statusColor}>{statusLabel}</Badge></td>
+                        <td style={td()}>
+                          <button onClick={() => setShipModal(o)} style={{
+                            fontSize: 11, fontWeight: 700, color: '#33546E', background: '#EAF0F4', border: '1px solid #C7D6DE',
+                            borderRadius: 5, padding: '3px 8px', display: 'flex', alignItems: 'center', gap: 4
+                          }}><ArrowRight size={11} /> Ship</button>
+                        </td>
                       </tr>
                     );
                   })}
