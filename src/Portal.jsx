@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Truck, Loader2, Check, LogOut, Package, ClipboardList } from 'lucide-react';
+import { Truck, Check, LogOut, Package, ClipboardList } from 'lucide-react';
 
 function fieldStyle() {
   return { width: '100%', padding: '9px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13.5, marginBottom: 12 };
@@ -9,114 +9,6 @@ function labelStyle() {
 }
 function th() { return { padding: '7px 10px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }; }
 function td() { return { padding: '8px 10px', fontSize: 13, verticalAlign: 'middle' }; }
-
-async function api(action, body) {
-  const res = await fetch('/api/dealer-auth', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...body }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
-  return data;
-}
-
-export default function Portal() {
-  const [token, setToken] = useState(() => localStorage.getItem('gr-dealer-token') || '');
-  const [dealerName, setDealerName] = useState('');
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      if (!token) { setChecking(false); return; }
-      try {
-        const data = await api('session', { token });
-        setDealerName(data.dealerName);
-      } catch {
-        localStorage.removeItem('gr-dealer-token');
-        setToken('');
-      }
-      setChecking(false);
-    })();
-  }, [token]);
-
-  function handleLogin(tok, name) {
-    localStorage.setItem('gr-dealer-token', tok);
-    setToken(tok);
-    setDealerName(name);
-  }
-
-  function handleLogout() {
-    api('logout', { token }).catch(() => {});
-    localStorage.removeItem('gr-dealer-token');
-    setToken('');
-    setDealerName('');
-  }
-
-  return (
-    <div style={{
-      fontFamily: "'Inter', sans-serif", background: '#EEEEE9', minHeight: '100vh', color: '#1C2126'
-    }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@600&display=swap');
-        * { box-sizing: border-box; }
-        table { border-collapse: collapse; width: 100%; }
-        button { cursor: pointer; font-family: 'Inter', sans-serif; }
-      `}</style>
-      {checking ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#5B6470', gap: 10 }}>
-          <Loader2 size={18} className="spin" /> Loading…
-          <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      ) : !token || !dealerName ? (
-        <LoginScreen onLogin={handleLogin} />
-      ) : (
-        <PortalHome dealerName={dealerName} token={token} onLogout={handleLogout} />
-      )}
-    </div>
-  );
-}
-
-function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e) {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const data = await api('login', { username, password });
-      onLogin(data.token, data.dealerName);
-    } catch (err) {
-      setError(err.message);
-    }
-    setLoading(false);
-  }
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 16 }}>
-      <form onSubmit={submit} style={{ background: 'white', border: '1px solid #DCD9CE', borderRadius: 12, padding: 28, width: '100%', maxWidth: 340 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 7, background: '#1C2126', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Truck size={17} color="#E8592A" />
-          </div>
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, textTransform: 'uppercase' }}>Dealer Portal</div>
-        </div>
-        <label style={labelStyle()}>Username</label>
-        <input value={username} onChange={e => setUsername(e.target.value)} style={fieldStyle()} autoFocus />
-        <label style={labelStyle()}>Password</label>
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={fieldStyle()} />
-        {error && <div style={{ color: '#B23A2E', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-        <button disabled={loading} type="submit" style={{
-          width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
-          padding: '11px', fontSize: 13.5, fontWeight: 700
-        }}>{loading ? 'Signing in…' : 'Sign in'}</button>
-      </form>
-    </div>
-  );
-}
 
 export function PortalHome({ dealerName, token, onLogout }) {
   const [orders, setOrders] = useState([]);

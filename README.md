@@ -91,36 +91,40 @@ attached to the project:
    "Redis credentials not found" message, the env vars still aren't attached — repeat
    step 1.
 
-## Dealer Portal (new)
+## One login for everyone
 
-There's now a second, completely separate page at **`/portal`** for dealers. It has no
-sidebar, no inventory, no other dealers' data — just a login, a simple order form, and a
-list of *that dealer's own* orders.
+The main site's login screen handles **both** staff/owner and dealer logins from
+the same page:
 
-**How it works:**
+- Leave username blank (or type "admin") + the `ADMIN_PASSWORD` → lands on the main
+  Dashboard.
+- Enter a staff username/password → lands on the main Dashboard with that staff
+  member's permissions.
+- Enter a dealer's username/password → lands on the Dealer Portal view, scoped to
+  that dealer only.
+
+Under the hood: the login form tries the staff/owner login first, and if that
+specific username+password doesn't match, it tries it as a dealer login before
+giving up. Whichever one succeeds decides what the person sees next.
+
+There's no separate `/portal` link anymore — everyone uses the same URL.
+
+**How dealer accounts work:**
 - Staff create a login for a dealer from the main site: **Dealers** → **Edit dealers** →
   click the key icon next to a dealer → set a username and password.
-- The dealer goes to `yoursite.vercel.app/portal`, logs in, and can place an order (pick a
-  model, quantity, optional PO) or see their order history. New orders show up immediately
-  in your main Orders view, Bumper Lookup, Dealer Lookup, and Production Planning — they're
-  the same order records, just entered by the dealer instead of you.
-- The dealer never sees stock quantities, other dealers, models management, or anything
-  else — the portal only ever talks to three narrow API routes (`/api/dealer-auth`,
+- The dealer signs in at your main site URL with that username/password, and sees a
+  simple order form plus their own order history — no sidebar, no inventory, no other
+  dealers' data.
+- New orders they place land in **New Orders** for staff to confirm before they become
+  real — see the section on that above.
+- The dealer never sees stock quantities, other dealers, or models management — that
+  view only ever talks to three narrow API routes (`/api/dealer-auth`,
   `/api/dealer-orders`, `/api/dealer-models`) that are scoped server-side to that one
   dealer's own data.
-
-**Security notes, since this is a first pass and not a hardened system:**
-- Passwords are hashed (not stored in plain text), but there's no password-reset flow,
-  no expiring sessions, and no lockout after repeated failed attempts.
-- Anyone who knows a dealer's username/password can log in from anywhere — there's no
-  extra verification step (email, 2FA, etc.).
 - If a dealer's login needs to be revoked, remove it from the Dealers section (same key
-  icon → Remove login).
+  icon → Remove login) — this also force-logs-out any active session immediately.
 
-If you ever want this tightened up — expiring sessions, forced password resets, rate
-limiting on login attempts — that's a reasonable next step, just ask.
-
-## Security & Backups (new)
+## Security & Backups
 
 This update closes the biggest gaps from before: there was no login on the main site,
 the API had no protection at all, and there was no way to recover data if something
