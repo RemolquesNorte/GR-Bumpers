@@ -281,6 +281,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
   const [productionBatches, setProductionBatches] = useState([]);
   const [productionLog, setProductionLog] = useState([]);
   const [newOrders, setNewOrders] = useState([]);
+  const [shippedLog, setShippedLog] = useState([]);
   const [tab, setTab] = useState('production');
   const [toast, setToast] = useState(null);
   const [shipModal, setShipModal] = useState(null);
@@ -292,7 +293,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
 
   useEffect(() => {
     (async () => {
-      const [inv, tb, dl, ord, meta, sales, legacyPending, prodLog, batches, incoming] = await Promise.all([
+      const [inv, tb, dl, ord, meta, sales, legacyPending, prodLog, batches, incoming, shipped] = await Promise.all([
         storageGet('bumper-inventory', true),
         storageGet('bumper-toolbox', true),
         storageGet('bumper-dealers', true),
@@ -303,6 +304,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
         storageGet('bumper-production-log', true),
         storageGet('bumper-production-batches', true),
         storageGet('bumper-new-orders', true),
+        storageGet('bumper-shipped-log', true),
       ]);
       let state = (inv && dl && ord)
         ? { inventory: inv, toolboxItems: tb || [], dealers: dl, orders: ord }
@@ -345,6 +347,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
       }
       setProductionBatches(finalBatches);
       setNewOrders(incoming || []);
+      setShippedLog(shipped || []);
 
       setLoading(false);
     })();
@@ -356,7 +359,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
   useEffect(() => {
     if (loading) return;
     const interval = setInterval(async () => {
-      const [inv, tb, dl, ord, sales, batches, prodLog, incoming] = await Promise.all([
+      const [inv, tb, dl, ord, sales, batches, prodLog, incoming, shipped] = await Promise.all([
         storageGet('bumper-inventory', true),
         storageGet('bumper-toolbox', true),
         storageGet('bumper-dealers', true),
@@ -365,6 +368,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
         storageGet('bumper-production-batches', true),
         storageGet('bumper-production-log', true),
         storageGet('bumper-new-orders', true),
+        storageGet('bumper-shipped-log', true),
       ]);
       if (inv) setInventory(inv);
       if (tb) setToolboxItems(tb);
@@ -374,6 +378,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
       if (batches) setProductionBatches(batches);
       if (prodLog) setProductionLog(prodLog);
       if (incoming) setNewOrders(incoming);
+      if (shipped) setShippedLog(shipped);
     }, 10000);
     return () => clearInterval(interval);
   }, [loading]);
@@ -460,6 +465,11 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
     await storageSet('bumper-production-log', next, true);
   }
 
+  async function persistShippedLog(next) {
+    setShippedLog(next);
+    await storageSet('bumper-shipped-log', next, true);
+  }
+
   function applyImport(nextInventory, sales, productionReceipts) {
     persistInventory(nextInventory);
     if (sales && sales.length) {
@@ -533,12 +543,12 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
     const nextOrders = orders.map(o => o.id === order.id
       ? { ...o, backordered: o.backordered - qty, invoiced: o.invoiced + qty }
       : o);
-    const locKey = LOCATIONS[order.shipFrom]?.key || 'mx';
-    const nextInv = inventory.map(row => row.sku === order.sku
-      ? { ...row, [locKey]: Math.max(0, (row[locKey] || 0) - qty) }
-      : row);
     persistOrders(nextOrders);
-    persistInventory(nextInv);
+    const entry = {
+      id: 'SH' + Date.now(), orderId: order.id, sku: order.sku, dealer: order.dealer,
+      po: order.po || '', shipFrom: order.shipFrom, qty, date: formatToday(),
+    };
+    persistShippedLog([entry, ...shippedLog]);
     showToast(`Shipped ${qty} × ${order.sku} to ${order.dealer}`);
     setShipModal(null);
   }
@@ -700,6 +710,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
     if (set.has('orders')) { persistOrders([]); }
     if (set.has('sold')) { persistSales([]); }
     if (set.has('production')) { persistProductionBatches([]); persistProductionLog([]); }
+    if (set.has('shipped')) { persistShippedLog([]); }
     showToast(`Deleted: ${categories.join(', ')}`);
   }
 
@@ -729,6 +740,7 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
       { id: 'production', label: 'Production Planning', icon: Factory },
       { id: 'sold', label: 'Sold Units', icon: TrendingDown },
       { id: 'orders', label: 'Orders', icon: ClipboardList },
+      { id: 'shipped', label: 'Shipped', icon: PackageCheck },
       { id: 'models', label: 'Models', icon: Package },
       { id: 'dealers', label: 'Dealers', icon: Users },
     ] },
@@ -823,6 +835,9 @@ function Dashboard({ onAdminLogout, adminSession } = {}) {
           )}
           {tab === 'orders' && (
             <OrdersView orders={ordersEnriched} onAdd={() => setOrderModal(true)} setShipModal={setShipModal} setEditOrderModal={setEditOrderModal} />
+          )}
+          {tab === 'shipped' && (
+            <ShippedView shippedLog={shippedLog} />
           )}
           {tab === 'models' && (
             <ModelsView inventory={inventory} orders={orders} pendingBySku={pendingBySku} onAdd={addModel} onRename={renameModel} onDelete={deleteModel} />
@@ -1727,6 +1742,97 @@ function SoldUnitsView({ salesLog }) {
   );
 }
 
+function ShippedView({ shippedLog }) {
+  const [skuFilter, setSkuFilter] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [sortMode, setSortMode] = useState('date');
+
+  const rows = useMemo(() => {
+    const filtered = shippedLog
+      .filter(s => !skuFilter || s.sku.toLowerCase().includes(skuFilter.toLowerCase()) || (s.dealer || '').toLowerCase().includes(skuFilter.toLowerCase()) || (s.po || '').toLowerCase().includes(skuFilter.toLowerCase()))
+      .filter(s => {
+        const d = parseDate(s.date);
+        if (!d) return true;
+        if (from && d < new Date(from + 'T00:00:00')) return false;
+        if (to && d > new Date(to + 'T23:59:59')) return false;
+        return true;
+      });
+    if (sortMode === 'most') return filtered.sort((a, b) => b.qty - a.qty);
+    if (sortMode === 'least') return filtered.sort((a, b) => a.qty - b.qty);
+    return filtered.sort((a, b) => (parseDate(b.date)?.getTime() ?? 0) - (parseDate(a.date)?.getTime() ?? 0));
+  }, [shippedLog, skuFilter, from, to, sortMode]);
+
+  const totalShipped = rows.reduce((s, r) => s + r.qty, 0);
+
+  return (
+    <div>
+      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', marginBottom: 4 }}>Shipped</div>
+      <div style={{ fontSize: 12.5, color: '#5B6470', marginBottom: 8 }}>
+        A record of every "Ship" action, kept even after the order itself is fully fulfilled. <strong>{totalShipped}</strong> unit{totalShipped === 1 ? '' : 's'} shipped in the selected range.
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: '#8A8F97' }} />
+          <input value={skuFilter} onChange={e => setSkuFilter(e.target.value)} placeholder="Filter by model, dealer, or PO…" style={{
+            padding: '6px 28px 6px 26px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13, width: 240
+          }} />
+          {skuFilter && <ClearButton onClick={() => setSkuFilter('')} />}
+        </div>
+        <label style={{ fontSize: 12, color: '#5B6470', display: 'flex', alignItems: 'center', gap: 5 }}>
+          From
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5 }} />
+        </label>
+        <label style={{ fontSize: 12, color: '#5B6470', display: 'flex', alignItems: 'center', gap: 5 }}>
+          To
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5 }} />
+        </label>
+        <select value={sortMode} onChange={e => setSortMode(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 12.5 }}>
+          <option value="date">Sort: newest first</option>
+          <option value="most">Sort: most shipped</option>
+          <option value="least">Sort: least shipped</option>
+        </select>
+        {(from || to || skuFilter) && (
+          <button onClick={() => { setFrom(''); setTo(''); setSkuFilter(''); }} style={{
+            fontSize: 12, color: '#B23A2E', background: 'none', border: 'none', fontWeight: 600
+          }}>Clear filters</button>
+        )}
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 10, border: '1px solid #DCD9CE', overflow: 'hidden' }}>
+        <table>
+          <thead>
+            <tr style={{ background: '#1C2126', color: '#F5F3EE' }}>
+              <th style={th()}>Date</th>
+              <th style={th()}>Model</th>
+              <th style={th()}>Dealer</th>
+              <th style={th()}>PO</th>
+              <th style={th()}>Ships from</th>
+              <th style={{ ...th(), textAlign: 'right' }}>Shipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s, i) => (
+              <tr key={s.id} className="row-hover" style={{ borderTop: i ? '1px solid #EFEDE4' : 'none' }}>
+                <td style={{ ...td(), fontSize: 12, color: '#5B6470' }}>{s.date}</td>
+                <td style={td()}><SkuTag sku={s.sku} /></td>
+                <td style={td()}>{s.dealer}</td>
+                <td style={{ ...td(), color: '#8A8F97' }}>{s.po || '—'}</td>
+                <td style={td()}><Badge color={LOCATIONS[s.shipFrom].color} bg="transparent" border={LOCATIONS[s.shipFrom].color}>{s.shipFrom}</Badge></td>
+                <td style={{ ...td(), textAlign: 'right', fontFamily: "'IBM Plex Mono', monospace", fontWeight: 700, color: '#3E7B4F' }}>{s.qty}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={6} style={{ ...td(), textAlign: 'center', color: '#8A8F97', padding: 26 }}>No shipments recorded for this filter yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ModelsView({ inventory, orders, pendingBySku, onAdd, onRename, onDelete }) {
   const [search, setSearch] = useState('');
   const [newSku, setNewSku] = useState('');
@@ -1856,6 +1962,7 @@ function ResetDataView({ onReset }) {
     { id: 'orders', label: 'Orders' },
     { id: 'sold', label: 'Sold Units log' },
     { id: 'production', label: 'Production tracking' },
+    { id: 'shipped', label: 'Shipped log' },
   ];
 
   async function tryUnlock() {
