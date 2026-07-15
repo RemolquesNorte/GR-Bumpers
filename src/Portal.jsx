@@ -118,7 +118,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function PortalHome({ dealerName, token, onLogout }) {
+export function PortalHome({ dealerName, token, onLogout }) {
   const [orders, setOrders] = useState([]);
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
