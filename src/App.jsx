@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Package, Truck, Users, AlertTriangle, Plus, ChevronDown, ChevronRight, Search, X, Check, ArrowRight, Warehouse, Loader2, PackageCheck, PackageX, Upload, Clock, UserSearch, Edit3, PackageSearch, Factory, ClipboardList, FileSpreadsheet, TrendingDown, Lock, Trash2, KeyRound, Inbox, LogOut, DownloadCloud, UploadCloud, RotateCcw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { storageGet, storageSet, setAdminToken, onUnauthorizedRequest } from './storage.js';
+import { PortalHome } from './Portal.jsx';
 
 const TRANSLATION = {"Defensa frontal completa de frente con malla (Chevrolet 03-07 Diesel)Peso 172 lbs": "FBMC 03-07", "Defensa frontal completa de frente con malla (Chevrolet 07.5-10 Diesel)Peso 172 lbs": "FBMC 7.5-10", "Defensa frontal completa de frente con malla (Chevrolet 11-14 Diesel)Peso 172 lbs": "FBMC 11-14", "Defensa frontal completa de frente con malla (Chevrolet 15-19 Diesel)Peso 172 lbs": "FBMC 15-19", "Defensa frontal completa de frente con malla (Chevrolet 20-23 Diesel) Peso 206.8 Lbs.": "FBMC 20-23", "Defensa frontal completa de frente con malla (Chevrolet 24-25 Diesel) Peso 206.8 Lbs.": "FBMC 24-25", "Defensa frontal completa de frente con malla (Chevrolet 26- Diesel) Peso 206.8 Lbs.": "FBMC 26-", "Defensa frontal completa de frente con malla (Chevrolet 99-02 Diesel)Peso 172 lbs.": "FBMC 99-02", "Defensa frontal completa de frente con malla (Dodge 03-05 Diesel)Peso 172 lbs.": "FBMD 03-05", "Defensa frontal completa de frente con malla (Dodge 06-09 Diesel) peso 172 lbs": "FBMD 06-09", "Defensa frontal completa de frente con malla (Dodge 10-18 Diesel)Peso 172 lbs": "FBMD 10-18", "Defensa frontal completa de frente con malla (Dodge 19-24 Diesel)Peso 238 lbs": "FBMD 19-24", "Defensa frontal completa de frente con malla (Dodge 95-02 Diesel)Peso 172 lbs": "FBMD 95-02", "Defensa frontal completa de frente con malla (Ford 05-07 Diesel)Peso 172 lbs": "FBMF 05-07", "Defensa frontal completa de frente con malla (Ford 08-10 Diesel)Peso 172 lbs": "FBMF 08-10", "Defensa frontal completa de frente con malla (Ford 11-16 F-350 y F-450 Diesel ) Peso 172 lbs.": "FBMF 11-16", "Defensa frontal completa de frente con malla (Ford 17-22 Diesel ) Peso 236 lbs.": "FBMF 17-22", "Defensa frontal completa de frente con malla (Ford 23-25 Diesel ) Peso 236 lbs.": "FBMF 23-26", "Defensa frontal completa de frente con malla (Ford 94-98 Diesel)": "FBMF 94-98", "Defensa frontal completa de frente con malla (Ford 99-04 Diesel)Peso 172 lbs": "FBMF 99-04", "Defensa frontal completa de frente con malla (GMC 03-07 Diesel) Peso 172 Lbs.": "FBMG 03-07", "Defensa frontal completa de frente con malla (GMC 11-14 Diesel) peso 172 lbs": "FBMG 11-14", "Defensa frontal completa de frente con malla (GMC 15-19 Diesel) Peso 172 Lbs.": "FBMG 15-19", "Defensa frontal completa de frente con malla (GMC 20-22 Diesel) Peso 172 Lbs.": "FBMG 20-22", "Defensa frontal completa de frente con malla (GMC 7.5-10 Diesel)Peso 172 lbs": "FBMG 7.5-10", "Defensa frontal completa de frente con malla (GMC 99-02 Diesel)": "FBMG 99-02", "Defensa trasera (Chevy 18-26 Diesel) peso 115 lbs.": "RBCGD 18-26", "Defensa trasera (Chevy y GMC 11-18 Diesel) peso 115 lbs.": "RBCGD 11-18", "Defensa trasera (Chevy y GMC 03-07 Diesel) Peso 115 lbs.": "RBCGD 03-07", "Defensa trasera (Chevy y GMC 07-10 Diesel) peso 115 lbs.": "RBCGD 07-10", "Defensa trasera (Chevy y GMC 20-22 Diesel) peso 115 lbs.": "RBCGD 20-22", "Defensa trasera (Chevy y GMC 99-02 Diesel)": "RBCGD 99-02", "Defensa trasera (Dodge 03-09 Diesel) Peso 115 lbs": "RBDD 03-09", "Defensa trasera (Dodge 24-26 Diesel)": "RBDD 24-26", "Defensa trasera (Dodge 95-02 Diesel) Peso 115 lbs": "RBDD 95-02", "Defensa trasera (Ford 08-16 Diesel)": "RBFD 08-16", "Defensa trasera (Ford 17-22 Diesel)": "RBFD 17-22", "Defensa trasera (Ford 23-26 Diesel)": "RBFD 23-26", "Defensa trasera (Ford 94-98 Diesel)": "RBFD 94-98", "Defensa trasera (Ford 99-07 Diesel) Peso 115 lbs": "RBFD 99-07", "Defensa trasera con luces (Chevy y GMC 99-02 Diesel)": "RBCGD 99-02"}
 ;
@@ -3031,7 +3032,7 @@ function EditOrderModal({ order, dealers, inventory, onClose, onSave, onDelete }
   );
 }
 
-function AdminLoginScreen({ onLogin }) {
+function UnifiedLoginScreen({ onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -3042,13 +3043,7 @@ function AdminLoginScreen({ onLogin }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/admin-auth', {
-        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'login', username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Incorrect password.');
-      onLogin(data.token, { role: data.role, username: data.username, permissions: data.permissions });
+      await onLogin(username, password);
     } catch (err) {
       setError(err.message);
     }
@@ -3067,7 +3062,10 @@ function AdminLoginScreen({ onLogin }) {
           <div style={{ width: 32, height: 32, borderRadius: 7, background: '#1C2126', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Truck size={17} color="#E8592A" />
           </div>
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, textTransform: 'uppercase' }}>Staff Sign In</div>
+          <div>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, textTransform: 'uppercase', lineHeight: 1.1 }}>Sign In</div>
+            <div style={{ fontSize: 10.5, color: '#8A8F97' }}>Staff or dealer</div>
+          </div>
         </div>
         <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Username</label>
         <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Leave blank if you're the owner" style={{
@@ -3088,30 +3086,54 @@ function AdminLoginScreen({ onLogin }) {
 }
 
 export default function App() {
-  const [adminToken, setTokenState] = useState(() => localStorage.getItem('gr-admin-token') || '');
-  const [adminSession, setAdminSession] = useState(null);
+  const [mode, setMode] = useState(null); // 'admin' | 'dealer' | null
+  const [adminToken, setAdminTokenState] = useState('');
+  const [adminSession, setAdminSessionState] = useState(null);
+  const [dealerToken, setDealerTokenState] = useState('');
+  const [dealerName, setDealerNameState] = useState('');
   const [checking, setChecking] = useState(true);
-  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     (async () => {
-      if (!adminToken) { setChecking(false); return; }
-      try {
-        const res = await fetch('/api/admin-auth', {
-          method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'session', token: adminToken }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setAdminToken(adminToken);
-          setAdminSession({ role: data.role, username: data.username, permissions: data.permissions });
-          setAuthed(true);
-        } else {
-          localStorage.removeItem('gr-admin-token'); setTokenState('');
-        }
-      } catch {
-        localStorage.removeItem('gr-admin-token'); setTokenState('');
+      const savedAdminToken = localStorage.getItem('gr-admin-token');
+      if (savedAdminToken) {
+        try {
+          const res = await fetch('/api/admin-auth', {
+            method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'session', token: savedAdminToken }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setAdminToken(savedAdminToken);
+            setAdminTokenState(savedAdminToken);
+            setAdminSessionState({ role: data.role, username: data.username, permissions: data.permissions });
+            setMode('admin');
+            setChecking(false);
+            return;
+          }
+        } catch { /* fall through */ }
+        localStorage.removeItem('gr-admin-token');
       }
+
+      const savedDealerToken = localStorage.getItem('gr-dealer-token');
+      if (savedDealerToken) {
+        try {
+          const res = await fetch('/api/dealer-auth', {
+            method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'session', token: savedDealerToken }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setDealerTokenState(savedDealerToken);
+            setDealerNameState(data.dealerName);
+            setMode('dealer');
+            setChecking(false);
+            return;
+          }
+        } catch { /* fall through */ }
+        localStorage.removeItem('gr-dealer-token');
+      }
+
       setChecking(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3120,30 +3142,70 @@ export default function App() {
   useEffect(() => {
     onUnauthorizedRequest(() => {
       localStorage.removeItem('gr-admin-token');
-      setTokenState('');
-      setAuthed(false);
-      setAdminSession(null);
+      setAdminTokenState('');
+      setAdminSessionState(null);
+      setMode(m => (m === 'admin' ? null : m));
     });
   }, []);
 
-  function handleLogin(token, session) {
-    setAdminToken(token);
-    localStorage.setItem('gr-admin-token', token);
-    setTokenState(token);
-    setAdminSession(session);
-    setAuthed(true);
+  async function handleUnifiedLogin(username, password) {
+    // Try staff/owner login first.
+    const adminRes = await fetch('/api/admin-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', username, password }),
+    });
+    if (adminRes.ok) {
+      const data = await adminRes.json();
+      localStorage.setItem('gr-admin-token', data.token);
+      setAdminToken(data.token);
+      setAdminTokenState(data.token);
+      setAdminSessionState({ role: data.role, username: data.username, permissions: data.permissions });
+      setMode('admin');
+      return;
+    }
+    const adminErr = await adminRes.json().catch(() => ({}));
+    if (adminRes.status === 429) throw new Error(adminErr.error || 'Too many attempts.');
+
+    // Not a staff/owner login — try it as a dealer login instead.
+    const dealerRes = await fetch('/api/dealer-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', username, password }),
+    });
+    if (dealerRes.ok) {
+      const data = await dealerRes.json();
+      localStorage.setItem('gr-dealer-token', data.token);
+      setDealerTokenState(data.token);
+      setDealerNameState(data.dealerName);
+      setMode('dealer');
+      return;
+    }
+    const dealerErr = await dealerRes.json().catch(() => ({}));
+    if (dealerRes.status === 429) throw new Error(dealerErr.error || 'Too many attempts.');
+
+    throw new Error('Incorrect username or password.');
   }
 
-  function handleLogout() {
+  function handleAdminLogout() {
     fetch('/api/admin-auth', {
       method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'logout', token: adminToken }),
     }).catch(() => {});
     localStorage.removeItem('gr-admin-token');
     setAdminToken(null);
-    setTokenState('');
-    setAuthed(false);
-    setAdminSession(null);
+    setAdminTokenState('');
+    setAdminSessionState(null);
+    setMode(null);
+  }
+
+  function handleDealerLogout() {
+    fetch('/api/dealer-auth', {
+      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'logout', token: dealerToken }),
+    }).catch(() => {});
+    localStorage.removeItem('gr-dealer-token');
+    setDealerTokenState('');
+    setDealerNameState('');
+    setMode(null);
   }
 
   if (checking) {
@@ -3154,9 +3216,13 @@ export default function App() {
     );
   }
 
-  if (!authed) {
-    return <AdminLoginScreen onLogin={handleLogin} />;
+  if (mode === 'admin') {
+    return <Dashboard onAdminLogout={handleAdminLogout} adminSession={adminSession} />;
   }
 
-  return <Dashboard onAdminLogout={handleLogout} adminSession={adminSession} />;
+  if (mode === 'dealer') {
+    return <PortalHome dealerName={dealerName} token={dealerToken} onLogout={handleDealerLogout} />;
+  }
+
+  return <UnifiedLoginScreen onLogin={handleUnifiedLogin} />;
 }
