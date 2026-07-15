@@ -20,6 +20,18 @@ function makeToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
+function normalizePermissions(permissions) {
+  const p = permissions || {};
+  return {
+    manageDealerLogins: !!p.manageDealerLogins,
+    processNewOrders: !!p.processNewOrders,
+    createOrders: !!p.createOrders,
+    editOrders: !!p.editOrders,
+    editModelsAndDealers: !!p.editModelsAndDealers,
+    receiveOrders: !!p.receiveOrders,
+  };
+}
+
 async function requireOwner(req) {
   const session = await getAdminSession((req.body || {}).token);
   if (!session || session.role !== 'owner') return null;
@@ -63,7 +75,11 @@ export default async function handler(req, res) {
         await redis.del(rlKey);
         const sessions = (await redis.get(ADMIN_SESSIONS_KEY)) || {};
         const sessionToken = makeToken();
-        sessions[sessionToken] = { role: 'owner', username: 'admin', permissions: { manageDealerLogins: true, manageStaff: true }, createdAt: Date.now() };
+        sessions[sessionToken] = {
+          role: 'owner', username: 'admin',
+          permissions: { manageDealerLogins: true, processNewOrders: true, createOrders: true, editOrders: true, editModelsAndDealers: true, receiveOrders: true, manageStaff: true },
+          createdAt: Date.now(),
+        };
         await redis.set(ADMIN_SESSIONS_KEY, sessions);
         return res.status(200).json({ token: sessionToken, role: 'owner', username: 'admin', permissions: sessions[sessionToken].permissions });
       }
@@ -123,7 +139,7 @@ export default async function handler(req, res) {
       const salt = crypto.randomBytes(16).toString('hex');
       staff[cleanUsername] = {
         salt, hash: hashPassword(password, salt),
-        permissions: { manageDealerLogins: !!permissions?.manageDealerLogins },
+        permissions: normalizePermissions(permissions),
         createdAt: Date.now(),
       };
       await redis.set(STAFF_ACCOUNTS_KEY, staff);
@@ -136,7 +152,7 @@ export default async function handler(req, res) {
       const cleanUsername = (username || '').trim().toLowerCase();
       const staff = (await redis.get(STAFF_ACCOUNTS_KEY)) || {};
       if (!staff[cleanUsername]) return res.status(404).json({ error: 'No such staff account.' });
-      staff[cleanUsername].permissions = { manageDealerLogins: !!permissions?.manageDealerLogins };
+      staff[cleanUsername].permissions = normalizePermissions(permissions);
       await redis.set(STAFF_ACCOUNTS_KEY, staff);
 
       // Update any of their active sessions immediately, not just future logins.
