@@ -2502,12 +2502,14 @@ function OrderModal({ dealers, inventory, onClose, onAdd }) {
 
   function submit() {
     const validLines = lines.filter(l => l.sku && l.qty > 0);
-    if (!dealer || validLines.length === 0) return;
+    if (!dealer || !po.trim() || validLines.length === 0) return;
     const items = validLines.map(l => ({
-      sku: l.sku, dealer, qty: l.qty, po, date: date || new Date().toLocaleDateString('en-US'), due: '', num: '',
+      sku: l.sku, dealer, qty: l.qty, po: po.trim(), date: date || new Date().toLocaleDateString('en-US'), due: '', num: '',
     }));
     onAdd(items);
   }
+
+  const canSubmit = !!dealer && !!po.trim() && lines.some(l => l.sku && l.qty > 0);
 
   return (
     <ModalShell title="New order" onClose={onClose} width={460}>
@@ -2516,8 +2518,8 @@ function OrderModal({ dealers, inventory, onClose, onAdd }) {
       <datalist id="dealer-list">
         {dealers.map(d => <option key={d.name} value={d.name} />)}
       </datalist>
-      <label style={labelStyle()}>PO # (optional, applies to the whole order)</label>
-      <input value={po} onChange={e => setPo(e.target.value)} style={fieldStyle()} />
+      <label style={labelStyle()}>PO # (required, applies to the whole order)</label>
+      <input value={po} onChange={e => setPo(e.target.value)} style={{ ...fieldStyle(), border: `1px solid ${po.trim() ? '#DCD9CE' : '#E8B4A8'}` }} />
 
       <label style={labelStyle()}>Models</label>
       {lines.map((l, i) => (
@@ -2539,8 +2541,8 @@ function OrderModal({ dealers, inventory, onClose, onAdd }) {
         borderRadius: 7, padding: '7px 10px', fontSize: 12.5, fontWeight: 600, marginBottom: 16, width: '100%', justifyContent: 'center'
       }}><Plus size={13} /> Add another model</button>
 
-      <button onClick={submit} style={{
-        width: '100%', background: '#E8592A', color: 'white', border: 'none', borderRadius: 8,
+      <button disabled={!canSubmit} onClick={submit} title={canSubmit ? '' : 'Dealer, PO, and at least one model are required'} style={{
+        width: '100%', background: canSubmit ? '#E8592A' : '#DCD9CE', color: 'white', border: 'none', borderRadius: 8,
         padding: '9px', fontSize: 13.5, fontWeight: 700
       }}>Add order{lines.filter(l => l.sku && l.qty > 0).length > 1 ? ` (${lines.filter(l => l.sku && l.qty > 0).length} models)` : ''}</button>
     </ModalShell>
