@@ -3103,7 +3103,7 @@ function UnifiedLoginScreen({ onLogin }) {
           </div>
         </div>
         <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Username</label>
-        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Leave blank if you're the owner" style={{
+        <input value={username} onChange={e => setUsername(e.target.value)} style={{
           width: '100%', padding: '9px 10px', borderRadius: 7, border: '1px solid #DCD9CE', fontSize: 13.5, marginBottom: 12
         }} />
         <label style={{ fontSize: 11.5, fontWeight: 700, color: '#5B6470', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Password</label>
